@@ -50,28 +50,56 @@ export function AccountsTab() {
 
   const accountToDelete = accounts.find((a) => a.id === deletingId);
 
+  const { totalBalance, activeCount, inactiveCount } = useMemo(() => {
+    let total = 0;
+    let active = 0;
+    let inactive = 0;
+
+    for (const a of accounts) {
+      if (a.isActive) {
+        total += a.balance || 0;
+        active++;
+      } else {
+        inactive++;
+      }
+    }
+
+    return {
+      totalBalance: total,
+      activeCount: active,
+      inactiveCount: inactive,
+    };
+  }, [accounts]);
+
   return (
     <div className="space-y-4">
-      {/* Standard Tab Toolbar */}
+      {/* Standard Tab Toolbar with Text Summary */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="relative max-w-sm w-full">
-          <Search className="size-3.5 absolute left-3 top-2.5 text-muted-foreground" />
-          <Input
-            placeholder="Search accounts or account numbers..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-8.5 h-8.5 text-xs"
-          />
+        <div className="text-xs text-muted-foreground font-medium">
+          Total Account Balance: <b className="text-foreground">{formatIDR(totalBalance)}</b> ({activeCount} active, {inactiveCount} inactive)
         </div>
 
         <Button
           onClick={handleOpenAdd}
           size="sm"
-          className="text-xs gap-1.5 h-8 self-start sm:self-auto bg-primary text-primary-foreground font-medium"
+          className="text-xs gap-1.5 h-8 self-start sm:self-auto bg-primary text-primary-foreground font-medium shrink-0"
         >
           <Plus className="size-3.5" />
           <span>Add Account</span>
         </Button>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="flex items-center gap-2 bg-muted/20 p-2.5 rounded-lg border border-border/50">
+        <div className="relative min-w-[200px] flex-1 max-w-sm">
+          <Search className="size-3.5 absolute left-3 top-2.5 text-muted-foreground" />
+          <Input
+            placeholder="Search accounts or account numbers..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-8 h-8 text-xs bg-card"
+          />
+        </div>
       </div>
 
       {/* Grid of Accounts */}

@@ -2,8 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { useStore } from '@/context/store-context';
-import { Asset } from '@/types';
-import { formatIDR } from '@/lib/currency';
+import { Asset, AssetCondition } from '@/types';
+import { formatIDR, formatSignedIDR } from '@/lib/currency';
 import { AssetCard } from '@/components/assets/asset-card';
 import { AssetFormSection } from '@/components/assets/asset-form';
 import { AssetsTable } from './assets-table';
@@ -35,7 +35,15 @@ interface AssetsTabProps {
   setShowAddForm?: (v: boolean) => void;
 }
 
-type SortOption = 'value_desc' | 'value_asc' | 'cost_desc' | 'gain_desc' | 'name_asc';
+type SortOption =
+  | 'name_asc'
+  | 'name_desc'
+  | 'value_desc'
+  | 'value_asc'
+  | 'cost_desc'
+  | 'cost_asc'
+  | 'gain_desc'
+  | 'gain_asc';
 type ViewMode = 'table' | 'grid';
 
 export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
@@ -44,7 +52,7 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedCondition, setSelectedCondition] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<SortOption>('value_desc');
+  const [sortBy, setSortBy] = useState<SortOption>('name_asc');
   const [viewMode, setViewMode] = useState<ViewMode>('table');
 
   const [currentPage, setCurrentPage] = useState(1);
@@ -77,14 +85,13 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
   const isFiltered =
     searchQuery !== '' ||
     selectedCategory !== 'all' ||
-    selectedCondition !== 'all' ||
-    sortBy !== 'value_desc';
+    selectedCondition !== 'all';
 
   const resetFilters = () => {
     setSearchQuery('');
     setSelectedCategory('all');
     setSelectedCondition('all');
-    setSortBy('value_desc');
+    setSortBy('name_asc');
     setCurrentPage(1);
   };
 
@@ -109,15 +116,22 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
         return matchesQuery && matchesCategory && matchesCondition;
       })
       .sort((a, b) => {
+        if (sortBy === 'name_asc') return a.name.localeCompare(b.name);
+        if (sortBy === 'name_desc') return b.name.localeCompare(a.name);
         if (sortBy === 'value_desc') return (b.currentEstimatedValue || 0) - (a.currentEstimatedValue || 0);
         if (sortBy === 'value_asc') return (a.currentEstimatedValue || 0) - (b.currentEstimatedValue || 0);
         if (sortBy === 'cost_desc') return (b.purchasePrice || 0) - (a.purchasePrice || 0);
+        if (sortBy === 'cost_asc') return (a.purchasePrice || 0) - (b.purchasePrice || 0);
         if (sortBy === 'gain_desc') {
           const gainA = (a.currentEstimatedValue || 0) - (a.purchasePrice || 0);
           const gainB = (b.currentEstimatedValue || 0) - (b.purchasePrice || 0);
           return gainB - gainA;
         }
-        if (sortBy === 'name_asc') return a.name.localeCompare(b.name);
+        if (sortBy === 'gain_asc') {
+          const gainA = (a.currentEstimatedValue || 0) - (a.purchasePrice || 0);
+          const gainB = (b.currentEstimatedValue || 0) - (b.purchasePrice || 0);
+          return gainA - gainB;
+        }
         return 0;
       });
   }, [assets, searchQuery, selectedCategory, selectedCondition, sortBy, categoryNameMap, categories]);
@@ -131,19 +145,27 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
     return filteredAssets.slice(start, start + pageSize);
   }, [filteredAssets, safeCurrentPage, pageSize]);
 
-  // Overall Portfolio Valuation Metrics
-  const { totalEstimatedValue, totalGainLoss } = useMemo(() => {
+  // Overall Portfolio Valuation Metrics: Comparison of Total Purchased Cost vs Total Estimated
+  const { totalEstimatedValue, totalPurchaseCost, totalGainLoss, gainPercent } = useMemo(() => {
     let est = 0;
     let cost = 0;
     for (const a of assets) {
-      est += a.currentEstimatedValue || 0;
-      cost += a.purchasePrice || 0;
+      est += a.currentEstimatedValue || a.sellingPrice || 0;
+      cost += a.purchasePrice || a.purchaseCost || 0;
     }
+    const diff = est - cost;
+    const pct = cost > 0 ? ((diff / cost) * 100).toFixed(1) : '0';
     return {
       totalEstimatedValue: est,
-      totalGainLoss: est - cost,
+      totalPurchaseCost: cost,
+      totalGainLoss: diff,
+      gainPercent: pct,
     };
   }, [assets]);
+
+  const handleUpdateCondition = (assetId: string, newCondition: AssetCondition) => {
+    updateProduct(assetId, { condition: newCondition });
+  };
 
   const handleStartTransfer = (asset: Asset) => {
     setTransferringAsset(asset);
@@ -174,12 +196,22 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
 
   const assetToDelete = assets.find((a) => a.id === deletingId);
 
+  const formattedGainLoss = formatSignedIDR(totalGainLoss);
+  const formattedPct = totalGainLoss > 0 ? `+${gainPercent}%` : `${gainPercent}%`;
+
   return (
     <div className="space-y-4">
       {/* Clean Tab Header with Text Summary (No Boxes) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="text-xs text-muted-foreground font-medium">
-          Estimated Assets Total: <b className="text-foreground">{formatIDR(totalEstimatedValue)}</b> ({assets.length} items recorded, {totalGainLoss >= 0 ? '+' : ''}{formatIDR(totalGainLoss)} total gain)
+        <div className="text-xs text-muted-foreground font-medium flex flex-wrap items-center gap-1.5">
+          <span>Estimated Assets Total: <b className="text-foreground">{formatIDR(totalEstimatedValue)}</b></span>
+          <span>(Cost: {formatIDR(totalPurchaseCost)})</span>
+          <span className="text-muted-foreground/60">•</span>
+          <span className={totalGainLoss >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-rose-600 dark:text-rose-400 font-semibold'}>
+            {formattedGainLoss} ({formattedPct})
+          </span>
+          <span className="text-muted-foreground/60">•</span>
+          <span>{assets.length} {assets.length === 1 ? 'item' : 'items'} recorded</span>
         </div>
 
         {/* View Switcher & Add Button */}
@@ -262,22 +294,6 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
           <option value="needs_repair">Needs Repair</option>
         </select>
 
-        {/* Sort By */}
-        <select
-          value={sortBy}
-          onChange={(e) => {
-            setSortBy(e.target.value as SortOption);
-            setCurrentPage(1);
-          }}
-          className="h-8 text-xs bg-card border border-border rounded-md px-2.5 font-medium text-foreground focus-visible:outline-none"
-        >
-          <option value="value_desc">Highest Value</option>
-          <option value="value_asc">Lowest Value</option>
-          <option value="cost_desc">Highest Cost</option>
-          <option value="gain_desc">Highest Gain</option>
-          <option value="name_asc">Name A-Z</option>
-        </select>
-
         {isFiltered && (
           <Button
             onClick={resetFilters}
@@ -315,6 +331,12 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
             currentPage={safeCurrentPage}
             pageSize={pageSize}
             isFiltered={isFiltered}
+            sortBy={sortBy}
+            onSortChange={(sort) => {
+              setSortBy(sort);
+              setCurrentPage(1);
+            }}
+            onUpdateCondition={handleUpdateCondition}
             onEdit={handleEdit}
             onTransferToProduct={handleStartTransfer}
             onDelete={(id) => setDeletingId(id)}

@@ -12,6 +12,17 @@ export function formatIDR(amount: number | string | null | undefined): string {
   return `Rp\u00A0${formatted}`;
 }
 
+export function formatSignedIDR(amount: number | string | null | undefined): string {
+  if (amount === null || amount === undefined || isNaN(Number(amount))) {
+    return 'Rp\u00A00';
+  }
+  const num = Math.round(Number(amount));
+  if (num === 0) return 'Rp\u00A00';
+  const sign = num > 0 ? '+' : '-';
+  const formatted = Math.abs(num).toLocaleString('id-ID');
+  return `${sign}Rp\u00A0${formatted}`;
+}
+
 export function parseIDR(formattedStr: string): number {
   if (!formattedStr) return 0;
   // Remove non-digit characters except minus sign

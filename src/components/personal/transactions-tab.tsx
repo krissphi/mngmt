@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { QuickActionModal } from '@/components/shared/quick-action-modal';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { TablePagination } from '@/components/shared/table-pagination';
-import { TransactionsTable } from './transactions-table';
+import { TransactionsTable, TrxSortField, TrxSortState } from './transactions-table';
 
 export function TransactionsTab() {
   const { transactions, accounts, categories, deleteTransaction } = useStore();
@@ -18,6 +18,7 @@ export function TransactionsTab() {
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortState, setSortState] = useState<TrxSortState>({ field: 'date', direction: 'desc' });
   const [deletingTrx, setDeletingTrx] = useState<Transaction | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
@@ -29,15 +30,34 @@ export function TransactionsTab() {
     return Array.from(set).sort().reverse();
   }, [transactions]);
 
-  const personalTransactions = useMemo(() => {
-    return transactions.filter((t) => {
-      if (t.scope !== 'personal') return false;
-      if (filterType !== 'all' && t.type !== filterType) return false;
-      if (selectedMonth !== 'all' && !t.date.startsWith(selectedMonth)) return false;
-      if (searchQuery && !t.description.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-      return true;
+  const handleSort = (field: TrxSortField) => {
+    setSortState((prev) => {
+      if (prev.field === field) {
+        return { field, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { field, direction: 'asc' };
     });
-  }, [transactions, filterType, selectedMonth, searchQuery]);
+    setCurrentPage(1);
+  };
+
+  const personalTransactions = useMemo(() => {
+    return transactions
+      .filter((t) => {
+        if (t.scope !== 'personal') return false;
+        if (filterType !== 'all' && t.type !== filterType) return false;
+        if (selectedMonth !== 'all' && !t.date.startsWith(selectedMonth)) return false;
+        if (searchQuery && !t.description.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const { field, direction } = sortState;
+        const dir = direction === 'asc' ? 1 : -1;
+        if (field === 'date') return dir * a.date.localeCompare(b.date);
+        if (field === 'description') return dir * a.description.localeCompare(b.description);
+        if (field === 'amount') return dir * (a.amount - b.amount);
+        return 0;
+      });
+  }, [transactions, filterType, selectedMonth, searchQuery, sortState]);
 
   const totalPages = Math.ceil(personalTransactions.length / pageSize) || 1;
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
@@ -117,6 +137,8 @@ export function TransactionsTab() {
         currentPage={safeCurrentPage}
         pageSize={pageSize}
         searchQuery={searchQuery}
+        sortState={sortState}
+        onSort={handleSort}
         onDeleteClick={setDeletingTrx}
       />
 

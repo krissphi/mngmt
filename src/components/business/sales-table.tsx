@@ -4,7 +4,7 @@ import React from 'react';
 import { Sale } from '@/types';
 import { formatIDR } from '@/lib/currency';
 import { Badge } from '@/components/ui/badge';
-import { Trash2 } from 'lucide-react';
+import { Trash2, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import {
   Table,
   TableHeader,
@@ -14,11 +14,20 @@ import {
   TableCell,
 } from '@/components/ui/table';
 
+export type SaleSortField = 'orderNumber' | 'channel' | 'date' | 'revenue' | 'profit' | 'status';
+export type SortDirection = 'asc' | 'desc';
+export interface SaleSortState {
+  field: SaleSortField;
+  direction: SortDirection;
+}
+
 interface SalesTableProps {
   sales: Sale[];
   currentPage: number;
   pageSize: number;
   isFiltered: boolean;
+  sortState?: SaleSortState;
+  onSort?: (field: SaleSortField) => void;
   onStatusChange: (id: string, newStatus: Sale['orderStatus']) => void;
   onDeleteSale?: (sale: Sale) => void;
 }
@@ -28,9 +37,23 @@ export function SalesTable({
   currentPage,
   pageSize,
   isFiltered,
+  sortState,
+  onSort,
   onStatusChange,
   onDeleteSale,
 }: SalesTableProps) {
+  const renderSortIcon = (field: SaleSortField) => {
+    if (!sortState) return null;
+    const isField = sortState.field === field;
+    if (isField && sortState.direction === 'asc') {
+      return <ArrowUp className="size-3 text-primary ml-1 inline shrink-0" />;
+    }
+    if (isField && sortState.direction === 'desc') {
+      return <ArrowDown className="size-3 text-primary ml-1 inline shrink-0" />;
+    }
+    return <ArrowUpDown className="size-3 text-muted-foreground/40 ml-1 inline shrink-0 group-hover:text-muted-foreground" />;
+  };
+
   return (
     <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
       <Table>
@@ -40,25 +63,67 @@ export function SalesTable({
               #
             </TableHead>
             <TableHead className="py-3 px-4 whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase">
-              Order Number
+              <button
+                type="button"
+                onClick={() => onSort?.('orderNumber')}
+                className="group inline-flex items-center hover:text-foreground font-semibold uppercase tracking-wider transition-colors"
+              >
+                <span>Order Number</span>
+                {renderSortIcon('orderNumber')}
+              </button>
             </TableHead>
             <TableHead className="py-3 px-4 whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase">
-              Channel
+              <button
+                type="button"
+                onClick={() => onSort?.('channel')}
+                className="group inline-flex items-center hover:text-foreground font-semibold uppercase tracking-wider transition-colors"
+              >
+                <span>Channel</span>
+                {renderSortIcon('channel')}
+              </button>
             </TableHead>
             <TableHead className="py-3 px-4 whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase">
-              Date
+              <button
+                type="button"
+                onClick={() => onSort?.('date')}
+                className="group inline-flex items-center hover:text-foreground font-semibold uppercase tracking-wider transition-colors"
+              >
+                <span>Date</span>
+                {renderSortIcon('date')}
+              </button>
             </TableHead>
             <TableHead className="py-3 px-4 min-w-[200px] text-xs font-semibold text-muted-foreground uppercase">
               Items & Customer
             </TableHead>
             <TableHead className="py-3 px-4 text-right whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase">
-              Gross Sales
+              <button
+                type="button"
+                onClick={() => onSort?.('revenue')}
+                className="group inline-flex items-center ml-auto hover:text-foreground font-semibold uppercase tracking-wider transition-colors"
+              >
+                <span>Gross Sales</span>
+                {renderSortIcon('revenue')}
+              </button>
             </TableHead>
             <TableHead className="py-3 px-4 text-right whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase">
-              Net Profit
+              <button
+                type="button"
+                onClick={() => onSort?.('profit')}
+                className="group inline-flex items-center ml-auto hover:text-foreground font-semibold uppercase tracking-wider transition-colors"
+              >
+                <span>Net Profit</span>
+                {renderSortIcon('profit')}
+              </button>
             </TableHead>
             <TableHead className="py-3 px-4 text-center whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase">
-              Status
+              <button
+                type="button"
+                onClick={() => onSort?.('status')}
+                className="group inline-flex items-center mx-auto hover:text-foreground font-semibold uppercase tracking-wider transition-colors"
+              >
+                <span>Status</span>
+                {renderSortIcon('status')}
+              </button>
             </TableHead>
             {onDeleteSale && (
               <TableHead className="w-12 text-center text-xs font-semibold text-muted-foreground uppercase py-3 px-2">

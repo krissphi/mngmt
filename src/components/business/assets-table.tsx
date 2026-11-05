@@ -3,9 +3,9 @@
 import React from 'react';
 import { Asset, AssetCondition } from '@/types';
 import { useStore } from '@/context/store-context';
-import { formatIDR } from '@/lib/currency';
+import { formatIDR, formatSignedIDR } from '@/lib/currency';
 import { Badge } from '@/components/ui/badge';
-import { ArrowRightLeft, Pencil, Trash2 } from 'lucide-react';
+import { ArrowRightLeft, Pencil, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import {
   Table,
   TableHeader,
@@ -15,11 +15,24 @@ import {
   TableCell,
 } from '@/components/ui/table';
 
+export type AssetSortOption =
+  | 'name_asc'
+  | 'name_desc'
+  | 'value_desc'
+  | 'value_asc'
+  | 'cost_desc'
+  | 'cost_asc'
+  | 'gain_desc'
+  | 'gain_asc';
+
 interface AssetsTableProps {
   assets: Asset[];
   currentPage: number;
   pageSize: number;
   isFiltered: boolean;
+  sortBy?: AssetSortOption;
+  onSortChange?: (sort: AssetSortOption) => void;
+  onUpdateCondition?: (assetId: string, newCondition: AssetCondition) => void;
   onEdit: (asset: Asset) => void;
   onTransferToProduct: (asset: Asset) => void;
   onDelete: (id: string) => void;
@@ -30,40 +43,50 @@ export function AssetsTable({
   currentPage,
   pageSize,
   isFiltered,
+  sortBy,
+  onSortChange,
+  onUpdateCondition,
   onEdit,
   onTransferToProduct,
   onDelete,
 }: AssetsTableProps) {
   const { categories } = useStore();
 
-  const getConditionBadge = (condition?: AssetCondition) => {
+  const handleHeaderSort = (field: 'name' | 'cost' | 'value' | 'gain') => {
+    if (!onSortChange) return;
+
+    if (field === 'name') {
+      onSortChange(sortBy === 'name_asc' ? 'name_desc' : 'name_asc');
+    } else if (field === 'cost') {
+      onSortChange(sortBy === 'cost_desc' ? 'cost_asc' : 'cost_desc');
+    } else if (field === 'value') {
+      onSortChange(sortBy === 'value_desc' ? 'value_asc' : 'value_desc');
+    } else if (field === 'gain') {
+      onSortChange(sortBy === 'gain_desc' ? 'gain_asc' : 'gain_desc');
+    }
+  };
+
+  const renderSortIcon = (field: 'name' | 'cost' | 'value' | 'gain') => {
+    const isAsc = sortBy === `${field}_asc`;
+    const isDesc = sortBy === `${field}_desc`;
+
+    if (isAsc) return <ArrowUp className="size-3 text-primary ml-1 inline shrink-0" />;
+    if (isDesc) return <ArrowDown className="size-3 text-primary ml-1 inline shrink-0" />;
+    return <ArrowUpDown className="size-3 text-muted-foreground/40 ml-1 inline shrink-0 group-hover:text-muted-foreground" />;
+  };
+
+  const getConditionColor = (condition?: AssetCondition) => {
     switch (condition) {
       case 'mint':
-        return (
-          <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
-            Mint
-          </Badge>
-        );
+        return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30';
       case 'good':
-        return (
-          <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
-            Good
-          </Badge>
-        );
+        return 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30';
       case 'fair':
-        return (
-          <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20">
-            Fair
-          </Badge>
-        );
+        return 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30';
       case 'needs_repair':
-        return (
-          <Badge variant="outline" className="text-[10px] bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20">
-            Repair
-          </Badge>
-        );
+        return 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30';
       default:
-        return <Badge variant="outline" className="text-[10px]">{condition}</Badge>;
+        return 'bg-muted text-muted-foreground border-border';
     }
   };
 
@@ -76,7 +99,14 @@ export function AssetsTable({
               #
             </TableHead>
             <TableHead className="py-3 px-4 min-w-[200px] text-xs font-semibold text-muted-foreground uppercase">
-              Asset Name
+              <button
+                type="button"
+                onClick={() => handleHeaderSort('name')}
+                className="group inline-flex items-center hover:text-foreground font-semibold uppercase tracking-wider transition-colors"
+              >
+                <span>Asset Name</span>
+                {renderSortIcon('name')}
+              </button>
             </TableHead>
             <TableHead className="py-3 px-3 whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase">
               Category
@@ -85,13 +115,34 @@ export function AssetsTable({
               Condition
             </TableHead>
             <TableHead className="py-3 px-4 text-right whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase">
-              Purchase Cost
+              <button
+                type="button"
+                onClick={() => handleHeaderSort('cost')}
+                className="group inline-flex items-center ml-auto hover:text-foreground font-semibold uppercase tracking-wider transition-colors"
+              >
+                <span>Purchase Cost</span>
+                {renderSortIcon('cost')}
+              </button>
             </TableHead>
             <TableHead className="py-3 px-4 text-right whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase">
-              Est. Value
+              <button
+                type="button"
+                onClick={() => handleHeaderSort('value')}
+                className="group inline-flex items-center ml-auto hover:text-foreground font-semibold uppercase tracking-wider transition-colors"
+              >
+                <span>Est. Value</span>
+                {renderSortIcon('value')}
+              </button>
             </TableHead>
             <TableHead className="py-3 px-4 text-right whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase">
-              Gain / Loss
+              <button
+                type="button"
+                onClick={() => handleHeaderSort('gain')}
+                className="group inline-flex items-center ml-auto hover:text-foreground font-semibold uppercase tracking-wider transition-colors"
+              >
+                <span>Gain / Loss</span>
+                {renderSortIcon('gain')}
+              </button>
             </TableHead>
             <TableHead className="w-24 text-center text-xs font-semibold text-muted-foreground uppercase py-3 px-2">
               Actions
@@ -129,7 +180,20 @@ export function AssetsTable({
                     </Badge>
                   </TableCell>
                   <TableCell className="py-3 px-3 whitespace-nowrap text-center">
-                    {getConditionBadge(asset.condition)}
+                    {/* Inline Condition Dropdown */}
+                    <select
+                      value={asset.condition || 'good'}
+                      onChange={(e) => onUpdateCondition?.(asset.id, e.target.value as AssetCondition)}
+                      className={`text-[11px] font-semibold px-2 py-0.5 rounded border transition-colors cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring ${getConditionColor(
+                        asset.condition
+                      )}`}
+                      title="Click to change condition instantly"
+                    >
+                      <option value="mint" className="bg-popover text-popover-foreground">Mint</option>
+                      <option value="good" className="bg-popover text-popover-foreground">Good</option>
+                      <option value="fair" className="bg-popover text-popover-foreground">Fair</option>
+                      <option value="needs_repair" className="bg-popover text-popover-foreground">Repair</option>
+                    </select>
                   </TableCell>
                   <TableCell className="py-3 px-4 text-right whitespace-nowrap tabular-nums text-muted-foreground">
                     {formatIDR(cost)}
@@ -139,8 +203,8 @@ export function AssetsTable({
                   </TableCell>
                   <TableCell className="py-3 px-4 text-right whitespace-nowrap tabular-nums font-medium">
                     <span className={diff >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                      {diff >= 0 ? '+' : ''}{formatIDR(diff)}
-                      <span className="text-[10px] ml-1 opacity-80">({diff >= 0 ? '+' : ''}{pct}%)</span>
+                      {formatSignedIDR(diff)}
+                      <span className="text-[10px] ml-1 opacity-80">({diff > 0 ? '+' : ''}{pct}%)</span>
                     </span>
                   </TableCell>
                   <TableCell className="py-3 px-2 text-center whitespace-nowrap">

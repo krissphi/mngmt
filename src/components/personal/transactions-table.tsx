@@ -3,7 +3,7 @@
 import React from 'react';
 import { Transaction, Category, Account } from '@/types';
 import { formatIDR } from '@/lib/currency';
-import { Trash2 } from 'lucide-react';
+import { Trash2, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import {
   Table,
   TableHeader,
@@ -14,6 +14,13 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 
+export type TrxSortField = 'date' | 'description' | 'amount';
+export type SortDirection = 'asc' | 'desc';
+export interface TrxSortState {
+  field: TrxSortField;
+  direction: SortDirection;
+}
+
 interface TransactionsTableProps {
   transactions: Transaction[];
   categories: Category[];
@@ -21,6 +28,8 @@ interface TransactionsTableProps {
   currentPage: number;
   pageSize: number;
   searchQuery: string;
+  sortState?: TrxSortState;
+  onSort?: (field: TrxSortField) => void;
   onDeleteClick: (t: Transaction) => void;
 }
 
@@ -31,8 +40,22 @@ export function TransactionsTable({
   currentPage,
   pageSize,
   searchQuery,
+  sortState,
+  onSort,
   onDeleteClick,
 }: TransactionsTableProps) {
+  const renderSortIcon = (field: TrxSortField) => {
+    if (!sortState) return null;
+    const isField = sortState.field === field;
+    if (isField && sortState.direction === 'asc') {
+      return <ArrowUp className="size-3 text-primary ml-1 inline shrink-0" />;
+    }
+    if (isField && sortState.direction === 'desc') {
+      return <ArrowDown className="size-3 text-primary ml-1 inline shrink-0" />;
+    }
+    return <ArrowUpDown className="size-3 text-muted-foreground/40 ml-1 inline shrink-0 group-hover:text-muted-foreground" />;
+  };
+
   return (
     <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
       <Table>
@@ -42,10 +65,24 @@ export function TransactionsTable({
               #
             </TableHead>
             <TableHead className="py-3 px-4 whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase">
-              Date
+              <button
+                type="button"
+                onClick={() => onSort?.('date')}
+                className="group inline-flex items-center hover:text-foreground font-semibold uppercase tracking-wider transition-colors"
+              >
+                <span>Date</span>
+                {renderSortIcon('date')}
+              </button>
             </TableHead>
             <TableHead className="py-3 px-4 min-w-[200px] text-xs font-semibold text-muted-foreground uppercase">
-              Description
+              <button
+                type="button"
+                onClick={() => onSort?.('description')}
+                className="group inline-flex items-center hover:text-foreground font-semibold uppercase tracking-wider transition-colors"
+              >
+                <span>Description</span>
+                {renderSortIcon('description')}
+              </button>
             </TableHead>
             <TableHead className="py-3 px-4 whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase">
               Category
@@ -54,7 +91,14 @@ export function TransactionsTable({
               Account
             </TableHead>
             <TableHead className="py-3 px-4 text-right whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase">
-              Amount
+              <button
+                type="button"
+                onClick={() => onSort?.('amount')}
+                className="group inline-flex items-center ml-auto hover:text-foreground font-semibold uppercase tracking-wider transition-colors"
+              >
+                <span>Amount</span>
+                {renderSortIcon('amount')}
+              </button>
             </TableHead>
             <TableHead className="w-16 py-3 px-3 text-center whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase">
               Action

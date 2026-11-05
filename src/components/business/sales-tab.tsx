@@ -2,13 +2,14 @@
 
 import React, { useState, useMemo } from 'react';
 import { useStore } from '@/context/store-context';
+import { formatIDR } from '@/lib/currency';
 import { Plus, Search, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TablePagination } from '@/components/shared/table-pagination';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { Sale } from '@/types';
-import { SalesTable } from './sales-table';
+import { SalesTable, SaleSortField, SaleSortState } from './sales-table';
 
 interface SalesTabProps {
   onOpenAddSale: () => void;
@@ -21,7 +22,7 @@ export function SalesTab({ onOpenAddSale }: SalesTabProps) {
   const [selectedChannel, setSelectedChannel] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'revenue_desc' | 'profit_desc'>('date_desc');
+  const [sortState, setSortState] = useState<SaleSortState>({ field: 'date', direction: 'desc' });
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -36,15 +37,25 @@ export function SalesTab({ onOpenAddSale }: SalesTabProps) {
     searchQuery !== '' ||
     selectedChannel !== 'all' ||
     selectedStatus !== 'all' ||
-    selectedMonth !== 'all' ||
-    sortBy !== 'date_desc';
+    selectedMonth !== 'all';
 
   const resetFilters = () => {
     setSearchQuery('');
     setSelectedChannel('all');
     setSelectedStatus('all');
     setSelectedMonth('all');
-    setSortBy('date_desc');
+    setSortState({ field: 'date', direction: 'desc' });
+    setCurrentPage(1);
+  };
+
+  const handleSort = (field: SaleSortField) => {
+    setSortState((prev) => {
+      if (prev.field === field) {
+        return { field, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { field, direction: 'asc' };
+    });
+    setCurrentPage(1);
   };
 
   const filteredSales = useMemo(() => {
@@ -64,13 +75,17 @@ export function SalesTab({ onOpenAddSale }: SalesTabProps) {
         return matchesQuery && matchesChannel && matchesStatus && matchesMonth;
       })
       .sort((a, b) => {
-        if (sortBy === 'date_desc') return b.saleDate.localeCompare(a.saleDate);
-        if (sortBy === 'date_asc') return a.saleDate.localeCompare(b.saleDate);
-        if (sortBy === 'revenue_desc') return b.grossSales - a.grossSales;
-        if (sortBy === 'profit_desc') return b.netProfit - a.netProfit;
+        const { field, direction } = sortState;
+        const dir = direction === 'asc' ? 1 : -1;
+        if (field === 'date') return dir * a.saleDate.localeCompare(b.saleDate);
+        if (field === 'orderNumber') return dir * a.orderNumber.localeCompare(b.orderNumber);
+        if (field === 'channel') return dir * a.channel.localeCompare(b.channel);
+        if (field === 'revenue') return dir * (a.grossSales - b.grossSales);
+        if (field === 'profit') return dir * (a.netProfit - b.netProfit);
+        if (field === 'status') return dir * a.orderStatus.localeCompare(b.orderStatus);
         return 0;
       });
-  }, [sales, searchQuery, selectedChannel, selectedStatus, selectedMonth, sortBy]);
+  }, [sales, searchQuery, selectedChannel, selectedStatus, selectedMonth, sortState]);
 
   const totalPages = Math.ceil(filteredSales.length / pageSize) || 1;
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
@@ -80,8 +95,49 @@ export function SalesTab({ onOpenAddSale }: SalesTabProps) {
     return filteredSales.slice(start, start + pageSize);
   }, [filteredSales, safeCurrentPage, pageSize]);
 
+  const now = new Date();
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const activeMonth = selectedMonth !== 'all' ? selectedMonth : currentMonthKey;
+
+  const { monthTotal, monthCount, monthProfit } = useMemo(() => {
+    let total = 0;
+    let profit = 0;
+    let count = 0;
+
+    for (const s of sales) {
+      if (s.orderStatus === 'cancelled' || s.orderStatus === 'returned') continue;
+      if (s.saleDate && s.saleDate.startsWith(activeMonth)) {
+        total += s.grossSales || 0;
+        profit += s.netProfit || 0;
+        count++;
+      }
+    }
+
+    return {
+      monthTotal: total,
+      monthCount: count,
+      monthProfit: profit,
+    };
+  }, [sales, activeMonth]);
+
   return (
     <div className="space-y-4">
+      {/* Clean Tab Header with Text Summary & Record Sale Button */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="text-xs text-muted-foreground font-medium">
+          {selectedMonth === 'all' ? 'Total Sales This Month' : `Total Sales (${selectedMonth})`}: <b className="text-foreground">{formatIDR(monthTotal)}</b> ({monthCount} {monthCount === 1 ? 'order' : 'orders'}{monthProfit > 0 ? `, Profit: +${formatIDR(monthProfit)}` : ''})
+        </div>
+
+        <Button
+          onClick={onOpenAddSale}
+          size="sm"
+          className="text-xs h-8 gap-1.5 bg-primary text-primary-foreground font-medium shrink-0 self-start sm:self-auto"
+        >
+          <Plus className="size-3.5" />
+          <span>Record Sale</span>
+        </Button>
+      </div>
+
       {/* Comprehensive Filter Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-muted/20 p-2.5 rounded-lg border border-border/50">
         <div className="flex flex-wrap items-center gap-2 flex-1">
@@ -146,20 +202,6 @@ export function SalesTab({ onOpenAddSale }: SalesTabProps) {
             <option value="returned">Returned</option>
           </select>
 
-          <select
-            value={sortBy}
-            onChange={(e) => {
-              setSortBy(e.target.value as 'date_desc' | 'date_asc' | 'revenue_desc' | 'profit_desc');
-              setCurrentPage(1);
-            }}
-            className="h-8 text-xs bg-card border border-border rounded-md px-2.5 font-medium text-foreground focus-visible:outline-none"
-          >
-            <option value="date_desc">Newest Order</option>
-            <option value="date_asc">Oldest Order</option>
-            <option value="revenue_desc">Highest Revenue</option>
-            <option value="profit_desc">Highest Profit</option>
-          </select>
-
           {isFiltered && (
             <Button
               onClick={resetFilters}
@@ -172,20 +214,6 @@ export function SalesTab({ onOpenAddSale }: SalesTabProps) {
             </Button>
           )}
         </div>
-
-        <div className="flex items-center gap-3 self-end md:self-auto">
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            Found <b className="text-foreground">{filteredSales.length}</b> orders
-          </span>
-          <Button
-            onClick={onOpenAddSale}
-            size="sm"
-            className="text-xs h-8 gap-1.5 bg-primary text-primary-foreground font-medium shrink-0"
-          >
-            <Plus className="size-3.5" />
-            <span>Record Sale</span>
-          </Button>
-        </div>
       </div>
 
       <SalesTable
@@ -193,6 +221,8 @@ export function SalesTab({ onOpenAddSale }: SalesTabProps) {
         currentPage={safeCurrentPage}
         pageSize={pageSize}
         isFiltered={isFiltered}
+        sortState={sortState}
+        onSort={handleSort}
         onStatusChange={updateSaleStatus}
         onDeleteSale={setDeletingSale}
       />
