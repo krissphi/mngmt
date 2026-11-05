@@ -1,69 +1,328 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import React, { useState, useMemo } from 'react';
+import { format, parseISO, isValid } from 'date-fns';
+import { useStore } from '@/context/store-context';
+import { getAvailableStock } from '@/lib/calculations';
+import { PageHeader } from '@/components/shared/page-header';
+import { DashboardSummaryKpi } from '@/components/dashboard/financial-kpi';
+import { AnalyticsCharts } from '@/components/dashboard/analytics-charts';
+import { DonutDistributionCharts } from '@/components/dashboard/donut-distribution-charts';
+import { RecentActivity } from '@/components/dashboard/recent-activity';
+
+type DateFilter = 'month' | 'year' | 'all';
+
+function formatMonthLabel(m: string): string {
+  try {
+    const d = parseISO(`${m}-01`);
+    return isValid(d) ? format(d, 'MMM yyyy') : m;
+  } catch {
+    return m;
+  }
+}
+
+export default function DashboardPage() {
+  const { accounts, products, sales, transactions, categories, isLoaded } = useStore();
+
+  const [dateFilter, setDateFilter] = useState<DateFilter>('month');
+
+  // Discover all available months from data
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>();
+    transactions.forEach((t) => t.date && set.add(t.date.slice(0, 7)));
+    sales.forEach((s) => s.saleDate && set.add(s.saleDate.slice(0, 7)));
+    if (set.size === 0) set.add(format(new Date(), 'yyyy-MM'));
+    return Array.from(set).sort().reverse();
+  }, [transactions, sales]);
+
+  // Discover all available years from data
+  const availableYears = useMemo(() => {
+    const set = new Set<string>();
+    transactions.forEach((t) => t.date && set.add(t.date.slice(0, 4)));
+    sales.forEach((s) => s.saleDate && set.add(s.saleDate.slice(0, 4)));
+    if (set.size === 0) set.add(format(new Date(), 'yyyy'));
+    return Array.from(set).sort().reverse();
+  }, [transactions, sales]);
+
+  const [selectedMonth, setSelectedMonth] = useState<string>('');
+  const [selectedYear, setSelectedYear] = useState<string>('');
+
+  // Effective selected values with intelligent fallbacks to active data periods
+  const effectiveMonth = selectedMonth || availableMonths[0] || format(new Date(), 'yyyy-MM');
+  const effectiveYear = selectedYear || availableYears[0] || format(new Date(), 'yyyy');
+
+  const totalCashBalance = useMemo(() => accounts.reduce((acc, a) => acc + a.balance, 0), [accounts]);
+
+  // Synchronized transaction filtering based on active dateFilter mode
+  const filteredTransactions = useMemo(() => {
+    if (dateFilter === 'month') return transactions.filter((t) => t.date && t.date.startsWith(effectiveMonth));
+    if (dateFilter === 'year') return transactions.filter((t) => t.date && t.date.startsWith(effectiveYear));
+    return transactions;
+  }, [transactions, dateFilter, effectiveMonth, effectiveYear]);
+
+  // Synchronized personal inflows and outflows
+  const { personalIncome, personalExpenses } = useMemo(() => {
+    let income = 0;
+    let expenses = 0;
+    for (const t of filteredTransactions) {
+      if (t.scope === 'personal') {
+        if (t.type === 'income') income += t.amount;
+        else if (t.type === 'expense') expenses += t.amount;
+      }
+    }
+    return { personalIncome: income, personalExpenses: expenses };
+  }, [filteredTransactions]);
+
+  // Synchronized business sales filtering based on active dateFilter mode
+  const businessSalesFiltered = useMemo(() => {
+    if (dateFilter === 'month') return sales.filter((s) => s.saleDate && s.saleDate.startsWith(effectiveMonth));
+    if (dateFilter === 'year') return sales.filter((s) => s.saleDate && s.saleDate.startsWith(effectiveYear));
+    return sales;
+  }, [sales, dateFilter, effectiveMonth, effectiveYear]);
+
+  // Synchronized revenue and profit
+  const { businessRevenue, businessNetProfit } = useMemo(() => {
+    let rev = 0;
+    let profit = 0;
+    for (const s of businessSalesFiltered) {
+      rev += s.grossSales;
+      profit += s.netProfit;
+    }
+    return { businessRevenue: rev, businessNetProfit: profit };
+  }, [businessSalesFiltered]);
+
+  // Inventory assets status
+  const { availableStockCount, inventoryCapitalValue, lowStockProducts } = useMemo(() => {
+    let stock = 0;
+    let capital = 0;
+    const lowStock = [];
+    for (const p of products) {
+      stock += getAvailableStock(p);
+      capital += p.stockOnHand * p.purchaseCost;
+      if (p.stockOnHand <= p.minStockAlert) {
+        lowStock.push(p);
+      }
+    }
+    return { availableStockCount: stock, inventoryCapitalValue: capital, lowStockProducts: lowStock };
+  }, [products]);
+
+  // Dynamic, filter-responsive chart data
+  const { chartData, periodLabel } = useMemo(() => {
+    // 1. MONTH MODE: Weekly intervals within the selected month
+    if (dateFilter === 'month') {
+      const [yStr, mStr] = effectiveMonth.split('-');
+      const y = parseInt(yStr, 10) || 2026;
+      const m = parseInt(mStr, 10) || 11;
+      const daysInMonth = new Date(y, m, 0).getDate();
+
+      const buckets = [
+        { label: 'W1 (1-7)', start: 1, end: 7 },
+        { label: 'W2 (8-14)', start: 8, end: 14 },
+        { label: 'W3 (15-21)', start: 15, end: 21 },
+        { label: 'W4 (22-28)', start: 22, end: 28 },
+      ];
+      if (daysInMonth > 28) {
+        buckets.push({ label: `W5 (29-${daysInMonth})`, start: 29, end: daysInMonth });
+      }
+
+      const monthTrx = transactions.filter((t) => t.date && t.date.startsWith(effectiveMonth));
+      const monthSales = sales.filter((s) => s.saleDate && s.saleDate.startsWith(effectiveMonth));
+
+      const data = buckets.map((b) => {
+        let income = 0;
+        let expenses = 0;
+        for (const t of monthTrx) {
+          const day = parseInt(t.date.split('-')[2], 10);
+          if (day >= b.start && day <= b.end && t.scope === 'personal') {
+            if (t.type === 'income') income += t.amount;
+            else if (t.type === 'expense') expenses += t.amount;
+          }
+        }
+
+        let revenue = 0;
+        let profit = 0;
+        for (const s of monthSales) {
+          const day = parseInt(s.saleDate.split('-')[2], 10);
+          if (day >= b.start && day <= b.end) {
+            revenue += s.grossSales;
+            profit += s.netProfit;
+          }
+        }
+
+        return { name: b.label, income, expenses, revenue, profit };
+      });
+
+      return {
+        chartData: data,
+        periodLabel: `${formatMonthLabel(effectiveMonth)} • Weekly Breakdown`,
+      };
+    }
+
+    // 2. YEAR MODE: 12 Monthly intervals within the selected year
+    if (dateFilter === 'year') {
+      const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const yearTrx = transactions.filter((t) => t.date && t.date.startsWith(effectiveYear));
+      const yearSales = sales.filter((s) => s.saleDate && s.saleDate.startsWith(effectiveYear));
+
+      const data = MONTH_NAMES.map((name, idx) => {
+        const monthKey = `${effectiveYear}-${String(idx + 1).padStart(2, '0')}`;
+        let income = 0;
+        let expenses = 0;
+        for (const t of yearTrx) {
+          if (t.date && t.date.startsWith(monthKey) && t.scope === 'personal') {
+            if (t.type === 'income') income += t.amount;
+            else if (t.type === 'expense') expenses += t.amount;
+          }
+        }
+
+        let revenue = 0;
+        let profit = 0;
+        for (const s of yearSales) {
+          if (s.saleDate && s.saleDate.startsWith(monthKey)) {
+            revenue += s.grossSales;
+            profit += s.netProfit;
+          }
+        }
+
+        return { name, income, expenses, revenue, profit };
+      });
+
+      return {
+        chartData: data,
+        periodLabel: `Year ${effectiveYear} • Monthly Breakdown`,
+      };
+    }
+
+    // 3. ALL TIME MODE: Annual intervals across all recorded years
+    const sortedYears = [...availableYears].sort();
+    const data = sortedYears.map((yr) => {
+      let income = 0;
+      let expenses = 0;
+      for (const t of transactions) {
+        if (t.date && t.date.startsWith(yr) && t.scope === 'personal') {
+          if (t.type === 'income') income += t.amount;
+          else if (t.type === 'expense') expenses += t.amount;
+        }
+      }
+
+      let revenue = 0;
+      let profit = 0;
+      for (const s of sales) {
+        if (s.saleDate && s.saleDate.startsWith(yr)) {
+          revenue += s.grossSales;
+          profit += s.netProfit;
+        }
+      }
+
+      return { name: yr, income, expenses, revenue, profit };
+    });
+
+    return {
+      chartData: data,
+      periodLabel: 'All Time • Annual Breakdown',
+    };
+  }, [dateFilter, effectiveMonth, effectiveYear, availableYears, transactions, sales]);
+
+  if (!isLoaded) {
+    return (
+      <div className="flex h-72 items-center justify-center">
+        <div className="size-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div className="space-y-6">
+      <PageHeader
+        title="Dashboard"
+        description="Integrated overview of personal finances, business operations, and inventory."
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Filter Mode Selector */}
+            <div className="flex items-center gap-1 bg-muted/60 p-0.5 rounded-lg text-xs font-medium border border-border/50">
+              <button
+                onClick={() => setDateFilter('month')}
+                className={`px-3 py-1 rounded-md transition-colors ${
+                  dateFilter === 'month' ? 'bg-card text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Month
+              </button>
+              <button
+                onClick={() => setDateFilter('year')}
+                className={`px-3 py-1 rounded-md transition-colors ${
+                  dateFilter === 'year' ? 'bg-card text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Year
+              </button>
+              <button
+                onClick={() => setDateFilter('all')}
+                className={`px-3 py-1 rounded-md transition-colors ${
+                  dateFilter === 'all' ? 'bg-card text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                All Time
+              </button>
+            </div>
+
+            {/* Month Dropdown when in Month filter mode */}
+            {dateFilter === 'month' && (
+              <select
+                value={effectiveMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="h-7.5 rounded-md border border-input bg-card px-2.5 text-xs text-foreground font-medium focus-visible:outline-none shadow-2xs cursor-pointer"
+                title="Select month to analyze"
+              >
+                {availableMonths.map((m) => (
+                  <option key={m} value={m}>
+                    {formatMonthLabel(m)}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Year Dropdown when in Year filter mode */}
+            {dateFilter === 'year' && (
+              <select
+                value={effectiveYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                className="h-7.5 rounded-md border border-input bg-card px-2.5 text-xs text-foreground font-medium focus-visible:outline-none shadow-2xs cursor-pointer"
+                title="Select year to analyze"
+              >
+                {availableYears.map((y) => (
+                  <option key={y} value={y}>
+                    Year {y}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        }
+      />
+
+      <DashboardSummaryKpi
+        totalCash={totalCashBalance}
+        personalIncome={personalIncome}
+        personalExpenses={personalExpenses}
+        businessRevenue={businessRevenue}
+        businessNetProfit={businessNetProfit}
+        availableStockCount={availableStockCount}
+        inventoryCapitalValue={inventoryCapitalValue}
+      />
+
+      <AnalyticsCharts chartData={chartData} periodLabel={periodLabel} />
+
+      <DonutDistributionCharts
+        transactions={filteredTransactions}
+        accounts={accounts}
+        categories={categories}
+      />
+
+      <RecentActivity
+        transactions={filteredTransactions.length > 0 ? filteredTransactions : transactions}
+        lowStockProducts={lowStockProducts}
+      />
     </div>
   );
 }
