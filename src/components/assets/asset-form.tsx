@@ -7,7 +7,6 @@ import { AssetCondition, Asset } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { ImageUpload } from '@/components/shared/image-upload';
 
 interface AssetFormSectionProps {
   open: boolean;
@@ -24,36 +23,36 @@ export function AssetFormSection({
   onSuccess,
   embedded = false,
 }: AssetFormSectionProps) {
-  const { addAsset, updateAsset, accounts } = useStore();
+  const { addAsset, updateAsset, accounts, categories } = useStore();
   const [prevData, setPrevData] = useState(initialData);
   const [name, setName] = useState(initialData?.name || '');
+  const [brand, setBrand] = useState(initialData?.brand || '');
+  const [categoryId, setCategoryId] = useState(initialData?.categoryId || '');
   const [category, setCategory] = useState(initialData?.category || 'Toys');
   const [purchasePrice, setPurchasePrice] = useState(initialData ? String(initialData.purchasePrice) : '');
   const [currentVal, setCurrentVal] = useState(initialData ? String(initialData.currentEstimatedValue) : '');
   const [condition, setCondition] = useState<AssetCondition>(initialData?.condition || 'mint');
-  const [notes, setNotes] = useState(initialData?.notes || '');
   const [paymentAccount, setPaymentAccount] = useState('');
-  const [imageUrl, setImageUrl] = useState(initialData?.imageUrl || '');
 
   if (initialData !== prevData) {
     setPrevData(initialData);
     if (initialData) {
       setName(initialData.name);
-      setCategory(initialData.category);
+      setBrand(initialData.brand || '');
+      setCategoryId(initialData.categoryId || '');
+      setCategory(initialData.category || 'Toys');
       setPurchasePrice(String(initialData.purchasePrice));
       setCurrentVal(String(initialData.currentEstimatedValue));
-      setCondition(initialData.condition);
-      setNotes(initialData.notes || '');
-      setImageUrl(initialData.imageUrl || '');
+      setCondition(initialData.condition || 'mint');
       setPaymentAccount('');
     } else {
       setName('');
+      setBrand('');
+      setCategoryId(categories.find((c) => c.type === 'product')?.id || '');
       setCategory('Toys');
       setPurchasePrice('');
       setCurrentVal('');
       setCondition('mint');
-      setNotes('');
-      setImageUrl('');
       setPaymentAccount('');
     }
   }
@@ -62,26 +61,40 @@ export function AssetFormSection({
     e.preventDefault();
     if (!name.trim()) return;
 
+    const selectedCat = categories.find((c) => c.id === categoryId);
+    const catName = selectedCat ? selectedCat.name : category;
+    const cost = Number(purchasePrice) || 0;
+    const estVal = Number(currentVal) || cost;
+
     if (initialData) {
       updateAsset(initialData.id, {
         name: name.trim(),
-        category,
-        purchasePrice: Number(purchasePrice) || 0,
-        currentEstimatedValue: Number(currentVal) || Number(purchasePrice) || 0,
+        brand: brand.trim(),
+        categoryId: categoryId || undefined,
+        category: catName,
+        purchasePrice: cost,
+        purchaseCost: cost,
+        currentEstimatedValue: estVal,
+        sellingPrice: estVal,
         condition,
-        notes: notes.trim(),
-        imageUrl: imageUrl || undefined,
       });
     } else {
       addAsset({
         name: name.trim(),
-        category,
-        purchasePrice: Number(purchasePrice) || 0,
-        currentEstimatedValue: Number(currentVal) || Number(purchasePrice) || 0,
+        brand: brand.trim(),
+        categoryId: categoryId || undefined,
+        category: catName,
+        purchasePrice: cost,
+        purchaseCost: cost,
+        currentEstimatedValue: estVal,
+        sellingPrice: estVal,
         condition,
-        status: 'owned',
-        notes: notes.trim(),
-        imageUrl: imageUrl || undefined,
+        status: 'active',
+        productType: 'asset',
+        stockOnHand: 1,
+        stockReserved: 0,
+        stockSold: 0,
+        minStockAlert: 0,
       }, paymentAccount || undefined);
     }
     if (onSuccess) {
@@ -94,14 +107,24 @@ export function AssetFormSection({
 
   const formElement = (
     <form onSubmit={handleSubmit} className="space-y-3 pt-2">
-      <div>
-        <label className="text-xs font-medium text-muted-foreground block mb-1">Asset / Item Name</label>
-        <Input
-          placeholder="e.g. Transformers MP-44 Convoy, Nintendo Switch"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-        />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Asset / Item Name</label>
+          <Input
+            placeholder="e.g. Transformers MP-44 Convoy, Nintendo Switch"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Brand / Maker</label>
+          <Input
+            placeholder="e.g. Takara Tomy, Bandai, Sony, Apple..."
+            value={brand}
+            onChange={(e) => setBrand(e.target.value)}
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -109,16 +132,21 @@ export function AssetFormSection({
           <label className="text-xs font-medium text-muted-foreground block mb-1">Category</label>
           <select
             className="w-full h-9 rounded-md border border-input bg-card px-3 text-xs"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            value={categoryId}
+            onChange={(e) => {
+              setCategoryId(e.target.value);
+              const catObj = categories.find((c) => c.id === e.target.value);
+              if (catObj) setCategory(catObj.name);
+            }}
           >
-            <option value="Toys">Toys</option>
-            <option value="Electronics">Electronics</option>
-            <option value="Clothing">Clothing</option>
-            <option value="Equipment">Equipment</option>
-            <option value="Property">Property</option>
-            <option value="Vehicles">Vehicles</option>
-            <option value="Collectibles">Collectibles</option>
+            <option value="">Select Category...</option>
+            {categories
+              .filter((c) => c.type === 'product')
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
           </select>
         </div>
         <div>
@@ -176,21 +204,6 @@ export function AssetFormSection({
           </select>
         </div>
       )}
-
-      <ImageUpload
-        value={imageUrl}
-        onChange={setImageUrl}
-        label="Collectible Photo (Optional)"
-      />
-
-      <div>
-        <label className="text-xs font-medium text-muted-foreground block mb-1">Notes (Optional)</label>
-        <Input
-          placeholder="e.g. Complete box, kept in glass display case"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-        />
-      </div>
 
       <div className="flex justify-end gap-2 pt-2 border-t border-border">
         <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>

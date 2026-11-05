@@ -84,6 +84,8 @@ export const INITIAL_CATEGORIES: Category[] = [
   { id: 'cat-prod-3', name: 'Clothing', type: 'product', color: '#059669' },
   { id: 'cat-prod-4', name: 'Equipment', type: 'product', color: '#D97706' },
   { id: 'cat-prod-5', name: 'Collectibles', type: 'product', color: '#EC4899' },
+  { id: 'cat-prod-6', name: 'Vehicles', type: 'product', color: '#6366F1' },
+  { id: 'cat-prod-7', name: 'Property', type: 'product', color: '#0D9488' },
 ];
 
 export const INITIAL_SUPPLIERS: Supplier[] = [

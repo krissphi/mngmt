@@ -5,7 +5,6 @@ import { useStore } from '@/context/store-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DialogFooter } from '@/components/ui/dialog';
-import { ImageUpload } from '@/components/shared/image-upload';
 
 interface ProductFormProps {
   onSuccess: (msg: string) => void;
@@ -21,7 +20,6 @@ export function ProductForm({ onSuccess, onCancel }: ProductFormProps) {
   const [prodCost, setProdCost] = useState('');
   const [prodPrice, setProdPrice] = useState('');
   const [prodStock, setProdStock] = useState('1');
-  const [prodImageUrl, setProdImageUrl] = useState('');
   const [prodCategory, setProdCategory] = useState(
     () => categories.find((c) => c.type === 'product')?.id || ''
   );
@@ -37,7 +35,6 @@ export function ProductForm({ onSuccess, onCancel }: ProductFormProps) {
       categoryId: prodCategory,
       purchaseCost: Number(prodCost) || 0,
       sellingPrice: Number(prodPrice),
-      imageUrl: prodImageUrl || undefined,
       productType: 'regular_inventory',
       stockOnHand: Number(prodStock) || 0,
       minStockAlert: 2,
@@ -126,12 +123,6 @@ export function ProductForm({ onSuccess, onCancel }: ProductFormProps) {
           />
         </div>
       </div>
-
-      <ImageUpload
-        value={prodImageUrl}
-        onChange={setProdImageUrl}
-        label="Product Photo (Optional)"
-      />
 
       <DialogFooter className="pt-2">
         <Button type="button" variant="outline" onClick={onCancel}>

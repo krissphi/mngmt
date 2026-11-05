@@ -19,12 +19,16 @@ interface SaleFormProps {
 export function SaleForm({ onSuccess, onCancel }: SaleFormProps) {
   const { accounts, products, recordSale } = useStore();
 
+  const saleProducts = React.useMemo(() => {
+    return products.filter((p) => p.productType !== 'asset' && p.productType !== 'personal_collection');
+  }, [products]);
+
   const [saleDate, setSaleDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [saleChannel, setSaleChannel] = useState<SalesChannel>('shopee');
   const [saleCustomer, setSaleCustomer] = useState('');
-  const [saleProduct, setSaleProduct] = useState(() => products[0]?.id || '');
+  const [saleProduct, setSaleProduct] = useState(() => saleProducts[0]?.id || '');
   const [saleQty, setSaleQty] = useState(1);
-  const [salePrice, setSalePrice] = useState(() => products[0]?.sellingPrice || 0);
+  const [salePrice, setSalePrice] = useState(() => saleProducts[0]?.sellingPrice || 0);
   const [saleDiscount, setSaleDiscount] = useState(0);
   const [salePacking, setSalePacking] = useState(0);
   const [saleAccount, setSaleAccount] = useState(() => accounts[0]?.id || '');
@@ -134,7 +138,7 @@ export function SaleForm({ onSuccess, onCancel }: SaleFormProps) {
       <div>
         <label className="text-xs font-medium text-muted-foreground block mb-1">Select Product (Live Search)</label>
         <ProductSearchSelect
-          products={products}
+          products={saleProducts}
           selectedProductId={saleProduct}
           onSelect={(p) => {
             setSaleProduct(p.id);

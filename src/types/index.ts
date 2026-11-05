@@ -56,20 +56,28 @@ export interface Transaction {
   createdAt: string;
 }
 
-export type ProductType = 'regular_inventory' | 'preloved' | 'personal_collection';
+export type ProductType = 'regular_inventory' | 'preloved' | 'asset' | 'personal_collection';
 export type ProductStatus = 'active' | 'archived' | 'discontinued';
+export type AssetCondition = 'mint' | 'good' | 'fair' | 'needs_repair';
+export type AssetStatus = 'owned' | 'for_sale' | 'sold' | 'archived';
 
 export interface Product {
   id: string;
   sku: string;
   name: string;
   categoryId?: string;
+  category?: string;
   supplierId?: string;
   brand?: string;
   description?: string;
+  notes?: string;
   imageUrl?: string;
   purchaseCost: number; // weighted average cost or unit cost
   sellingPrice: number;
+  purchasePrice?: number; // compatibility alias for assets
+  currentEstimatedValue?: number; // compatibility alias for assets
+  purchaseDate?: string;
+  condition?: AssetCondition;
   productType: ProductType;
   stockOnHand: number;
   stockReserved: number;
@@ -78,6 +86,13 @@ export interface Product {
   status: ProductStatus;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Asset extends Product {
+  purchasePrice: number;
+  currentEstimatedValue: number;
+  condition: AssetCondition;
+  category: string;
 }
 
 export type MovementType = 
@@ -184,23 +199,6 @@ export interface WishlistItem {
   createdAt: string;
 }
 
-export type AssetCondition = 'mint' | 'good' | 'fair' | 'needs_repair';
-export type AssetStatus = 'owned' | 'for_sale' | 'sold' | 'archived';
-
-export interface Asset {
-  id: string;
-  name: string;
-  category: string;
-  purchaseDate?: string;
-  purchasePrice: number;
-  currentEstimatedValue: number;
-  condition: AssetCondition;
-  status: AssetStatus;
-  imageUrl?: string;
-  notes?: string;
-  createdAt: string;
-  updatedAt: string;
-}
 
 export type BillingCycle = 'monthly' | 'yearly' | 'weekly' | '28_days';
 export type SubscriptionStatus = 'active' | 'paused' | 'cancelled';

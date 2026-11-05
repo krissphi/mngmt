@@ -81,13 +81,24 @@ export function ExpenseForm({ onSuccess, onCancel }: ExpenseFormProps) {
             onChange={(e) => setTrxCategory(e.target.value)}
           >
             <option value="">Select Category...</option>
-            {categories
-              .filter((c) => c.type === 'personal_expense' || c.type === 'business_expense')
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.type === 'business_expense' ? 'Business' : 'Personal'})
-                </option>
-              ))}
+            <optgroup label="Personal Expenses">
+              {categories
+                .filter((c) => c.type === 'personal_expense')
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+            </optgroup>
+            <optgroup label="Business Expenses">
+              {categories
+                .filter((c) => c.type === 'business_expense')
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+            </optgroup>
           </select>
         </div>
       </div>

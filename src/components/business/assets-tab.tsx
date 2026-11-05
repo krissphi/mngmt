@@ -6,10 +6,27 @@ import { Asset } from '@/types';
 import { formatIDR } from '@/lib/currency';
 import { AssetCard } from '@/components/assets/asset-card';
 import { AssetFormSection } from '@/components/assets/asset-form';
-import { Gem, Plus, Search, ArrowRightLeft } from 'lucide-react';
+import { AssetsTable } from './assets-table';
+import { TablePagination } from '@/components/shared/table-pagination';
+import {
+  Gem,
+  Plus,
+  Search,
+  ArrowRightLeft,
+  LayoutGrid,
+  List,
+  RotateCcw,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { EmptyState, NoSearchResultState } from '@/components/states/state-views';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 
@@ -18,12 +35,23 @@ interface AssetsTabProps {
   setShowAddForm?: (v: boolean) => void;
 }
 
+type SortOption = 'value_desc' | 'value_asc' | 'cost_desc' | 'gain_desc' | 'name_asc';
+type ViewMode = 'table' | 'grid';
+
 export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
-  const { assets, deleteAsset, addProduct } = useStore();
+  const { assets, deleteAsset, updateProduct, categories } = useStore();
+
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedCondition, setSelectedCondition] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<SortOption>('value_desc');
+  const [viewMode, setViewMode] = useState<ViewMode>('table');
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
   const [internalAddOpen, setInternalAddOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
-
   const [transferringAsset, setTransferringAsset] = useState<Asset | null>(null);
   const [transferPrice, setTransferPrice] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -31,40 +59,106 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
   const isFormOpen = showAddForm !== undefined ? showAddForm : internalAddOpen;
   const setFormOpen = setShowAddForm || setInternalAddOpen;
 
+  const categoryNameMap = useMemo(() => {
+    return new Map(categories.map((c) => [c.id, c.name.toLowerCase()]));
+  }, [categories]);
+
+  // Extract unique categories for filter dropdown
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>();
+    categories.filter((c) => c.type === 'product').forEach((c) => set.add(c.name));
+    assets.forEach((a) => {
+      const catName = a.categoryId ? categories.find((c) => c.id === a.categoryId)?.name : a.category;
+      if (catName) set.add(catName);
+    });
+    return Array.from(set).sort();
+  }, [assets, categories]);
+
+  const isFiltered =
+    searchQuery !== '' ||
+    selectedCategory !== 'all' ||
+    selectedCondition !== 'all' ||
+    sortBy !== 'value_desc';
+
+  const resetFilters = () => {
+    setSearchQuery('');
+    setSelectedCategory('all');
+    setSelectedCondition('all');
+    setSortBy('value_desc');
+    setCurrentPage(1);
+  };
+
+  // Filtered and sorted assets
   const filteredAssets = useMemo(() => {
-    if (!searchQuery.trim()) return assets;
-    const q = searchQuery.toLowerCase();
-    return assets.filter(
-      (a) =>
-        a.name.toLowerCase().includes(q) ||
-        a.category.toLowerCase().includes(q) ||
-        (a.notes && a.notes.toLowerCase().includes(q))
-    );
-  }, [assets, searchQuery]);
+    return assets
+      .filter((a) => {
+        const q = searchQuery.toLowerCase().trim();
+        const catName = (a.categoryId ? categoryNameMap.get(a.categoryId) : undefined) || (a.category ? a.category.toLowerCase() : '');
+        const brandStr = a.brand ? a.brand.toLowerCase() : '';
+        const matchesQuery =
+          !q ||
+          a.name.toLowerCase().includes(q) ||
+          brandStr.includes(q) ||
+          catName.includes(q) ||
+          (a.notes && a.notes.toLowerCase().includes(q));
+
+        const assetCatName = (a.categoryId ? categories.find((c) => c.id === a.categoryId)?.name : undefined) || a.category || '';
+        const matchesCategory = selectedCategory === 'all' || assetCatName === selectedCategory;
+        const matchesCondition = selectedCondition === 'all' || a.condition === selectedCondition;
+
+        return matchesQuery && matchesCategory && matchesCondition;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'value_desc') return (b.currentEstimatedValue || 0) - (a.currentEstimatedValue || 0);
+        if (sortBy === 'value_asc') return (a.currentEstimatedValue || 0) - (b.currentEstimatedValue || 0);
+        if (sortBy === 'cost_desc') return (b.purchasePrice || 0) - (a.purchasePrice || 0);
+        if (sortBy === 'gain_desc') {
+          const gainA = (a.currentEstimatedValue || 0) - (a.purchasePrice || 0);
+          const gainB = (b.currentEstimatedValue || 0) - (b.purchasePrice || 0);
+          return gainB - gainA;
+        }
+        if (sortBy === 'name_asc') return a.name.localeCompare(b.name);
+        return 0;
+      });
+  }, [assets, searchQuery, selectedCategory, selectedCondition, sortBy, categoryNameMap, categories]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredAssets.length / pageSize) || 1;
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const paginatedAssets = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredAssets.slice(start, start + pageSize);
+  }, [filteredAssets, safeCurrentPage, pageSize]);
+
+  // Overall Portfolio Valuation Metrics
+  const { totalEstimatedValue, totalGainLoss } = useMemo(() => {
+    let est = 0;
+    let cost = 0;
+    for (const a of assets) {
+      est += a.currentEstimatedValue || 0;
+      cost += a.purchasePrice || 0;
+    }
+    return {
+      totalEstimatedValue: est,
+      totalGainLoss: est - cost,
+    };
+  }, [assets]);
 
   const handleStartTransfer = (asset: Asset) => {
     setTransferringAsset(asset);
-    setTransferPrice(String(asset.currentEstimatedValue));
+    setTransferPrice(String(asset.currentEstimatedValue || asset.sellingPrice || 0));
   };
 
   const handleConfirmTransfer = (e: React.FormEvent) => {
     e.preventDefault();
     if (!transferringAsset) return;
 
-    const sku = `KOL-${transferringAsset.name.substring(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`;
-    addProduct({
-      name: transferringAsset.name,
-      sku,
-      productType: 'personal_collection',
-      purchaseCost: transferringAsset.purchasePrice,
-      sellingPrice: Number(transferPrice) || transferringAsset.currentEstimatedValue,
-      stockOnHand: 1,
-      minStockAlert: 0,
-      status: 'active',
-      description: `Personal asset (Condition: ${transferringAsset.condition}). ${transferringAsset.notes || ''}`,
+    updateProduct(transferringAsset.id, {
+      productType: 'preloved',
+      sellingPrice: Number(transferPrice) || transferringAsset.sellingPrice || transferringAsset.currentEstimatedValue,
     });
 
-    deleteAsset(transferringAsset.id);
     setTransferringAsset(null);
   };
 
@@ -82,46 +176,130 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
 
   return (
     <div className="space-y-4">
-      {/* Header Bar */}
+      {/* Clean Tab Header with Text Summary (No Boxes) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="relative max-w-sm w-full">
+        <div className="text-xs text-muted-foreground font-medium">
+          Estimated Assets Total: <b className="text-foreground">{formatIDR(totalEstimatedValue)}</b> ({assets.length} items recorded, {totalGainLoss >= 0 ? '+' : ''}{formatIDR(totalGainLoss)} total gain)
+        </div>
+
+        {/* View Switcher & Add Button */}
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex items-center border border-border/80 rounded-md p-0.5 bg-card">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`p-1.5 rounded transition-colors ${
+                viewMode === 'table' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title="Table View"
+            >
+              <List className="size-3.5" />
+            </button>
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-1.5 rounded transition-colors ${
+                viewMode === 'grid' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title="Grid / Card View"
+            >
+              <LayoutGrid className="size-3.5" />
+            </button>
+          </div>
+
+          <Button
+            onClick={handleOpenAdd}
+            size="sm"
+            className="text-xs h-8 gap-1.5 bg-primary text-primary-foreground font-medium shrink-0"
+          >
+            <Plus className="size-3.5" />
+            <span>Add Asset</span>
+          </Button>
+        </div>
+      </div>
+
+      {/* Comprehensive Filter Toolbar */}
+      <div className="flex flex-wrap items-center gap-2 bg-muted/20 p-2.5 rounded-lg border border-border/50">
+        <div className="relative min-w-[180px] flex-1 max-w-xs">
           <Search className="size-3.5 absolute left-3 top-2.5 text-muted-foreground" />
           <Input
-            placeholder="Search personal assets or category..."
+            placeholder="Search asset, category, notes..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-8.5 h-8.5 text-xs"
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="pl-8 h-8 text-xs bg-card"
           />
         </div>
 
-        <Button
-          onClick={handleOpenAdd}
-          size="sm"
-          className="text-xs h-8 gap-1.5 self-start sm:self-auto bg-primary text-primary-foreground font-medium"
+        {/* Category Filter */}
+        <select
+          value={selectedCategory}
+          onChange={(e) => {
+            setSelectedCategory(e.target.value);
+            setCurrentPage(1);
+          }}
+          className="h-8 text-xs bg-card border border-border rounded-md px-2.5 font-medium text-foreground focus-visible:outline-none"
         >
-          <Plus className="size-3.5" />
-          <span>Add Asset</span>
-        </Button>
+          <option value="all">All Categories</option>
+          {availableCategories.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+
+        {/* Condition Filter */}
+        <select
+          value={selectedCondition}
+          onChange={(e) => {
+            setSelectedCondition(e.target.value);
+            setCurrentPage(1);
+          }}
+          className="h-8 text-xs bg-card border border-border rounded-md px-2.5 font-medium text-foreground focus-visible:outline-none"
+        >
+          <option value="all">All Conditions</option>
+          <option value="mint">Mint</option>
+          <option value="good">Good</option>
+          <option value="fair">Fair</option>
+          <option value="needs_repair">Needs Repair</option>
+        </select>
+
+        {/* Sort By */}
+        <select
+          value={sortBy}
+          onChange={(e) => {
+            setSortBy(e.target.value as SortOption);
+            setCurrentPage(1);
+          }}
+          className="h-8 text-xs bg-card border border-border rounded-md px-2.5 font-medium text-foreground focus-visible:outline-none"
+        >
+          <option value="value_desc">Highest Value</option>
+          <option value="value_asc">Lowest Value</option>
+          <option value="cost_desc">Highest Cost</option>
+          <option value="gain_desc">Highest Gain</option>
+          <option value="name_asc">Name A-Z</option>
+        </select>
+
+        {isFiltered && (
+          <Button
+            onClick={resetFilters}
+            variant="ghost"
+            size="sm"
+            className="text-xs h-8 px-2 text-muted-foreground hover:text-foreground gap-1"
+          >
+            <RotateCcw className="size-3" />
+            <span>Reset</span>
+          </Button>
+        )}
       </div>
 
-      <AssetFormSection
-        open={isFormOpen}
-        onOpenChange={(open) => {
-          setFormOpen(open);
-          if (!open) setEditingAsset(null);
-        }}
-        initialData={editingAsset}
-      />
-
-      {/* Assets Grid */}
+      {/* Main Content: Table or Grid */}
       {filteredAssets.length === 0 ? (
-        searchQuery ? (
-          <NoSearchResultState query={searchQuery} onReset={() => setSearchQuery('')} />
+        searchQuery || isFiltered ? (
+          <NoSearchResultState query={searchQuery || 'selected filters'} onReset={resetFilters} />
         ) : (
           <EmptyState
             icon={<Gem className="size-8" />}
             title="No Personal Assets Found"
-            description="Track personal collectibles, hobby figures, and high-value gear."
+            description="Track personal collectibles, electronics, and valuable gear."
             action={
               <Button size="sm" onClick={handleOpenAdd}>
                 <Plus className="size-3.5 mr-1" />
@@ -130,19 +308,63 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
             }
           />
         )
+      ) : viewMode === 'table' ? (
+        <>
+          <AssetsTable
+            assets={paginatedAssets}
+            currentPage={safeCurrentPage}
+            pageSize={pageSize}
+            isFiltered={isFiltered}
+            onEdit={handleEdit}
+            onTransferToProduct={handleStartTransfer}
+            onDelete={(id) => setDeletingId(id)}
+          />
+
+          <TablePagination
+            currentPage={safeCurrentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredAssets.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+            pageSizeOptions={[10, 25, 50]}
+          />
+        </>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredAssets.map((asset) => (
-            <AssetCard
-              key={asset.id}
-              asset={asset}
-              onEdit={handleEdit}
-              onTransferToProduct={handleStartTransfer}
-              onDelete={(id) => setDeletingId(id)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {paginatedAssets.map((asset) => (
+              <AssetCard
+                key={asset.id}
+                asset={asset}
+                onEdit={handleEdit}
+                onTransferToProduct={handleStartTransfer}
+                onDelete={(id) => setDeletingId(id)}
+              />
+            ))}
+          </div>
+
+          <TablePagination
+            currentPage={safeCurrentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredAssets.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+            pageSizeOptions={[12, 24, 48]}
+          />
+        </>
       )}
+
+      {/* Asset Form Dialog */}
+      <AssetFormSection
+        open={isFormOpen}
+        onOpenChange={(open) => {
+          setFormOpen(open);
+          if (!open) setEditingAsset(null);
+        }}
+        initialData={editingAsset}
+      />
 
       {/* Transfer to Sales Catalog Dialog */}
       <Dialog open={!!transferringAsset} onOpenChange={(open) => !open && setTransferringAsset(null)}>

@@ -42,6 +42,7 @@ export interface StoreContextType {
 
   recordSale: (sale: Omit<Sale, 'id' | 'createdAt' | 'orderNumber'> & { orderNumber?: string }) => Sale;
   updateSaleStatus: (saleId: string, newStatus: Sale['orderStatus']) => void;
+  deleteSale: (saleId: string) => void;
 
   addAccount: (account: Omit<Account, 'id' | 'createdAt' | 'updatedAt'>) => Account;
   updateAccount: (id: string, updates: Partial<Account>) => void;
@@ -59,7 +60,7 @@ export interface StoreContextType {
   updateWishlistItem: (id: string, updates: Partial<WishlistItem>) => void;
   deleteWishlistItem: (id: string) => void;
 
-  addAsset: (asset: Omit<Asset, 'id' | 'createdAt' | 'updatedAt'>, paymentAccountId?: string) => Asset;
+  addAsset: (asset: Omit<Asset, 'id' | 'createdAt' | 'updatedAt' | 'sku'> & { sku?: string }, paymentAccountId?: string) => Asset;
   updateAsset: (id: string, updates: Partial<Asset>) => void;
   deleteAsset: (id: string) => void;
 
@@ -72,5 +73,6 @@ export interface StoreContextType {
   paySubscription: (id: string, paymentDetails?: { accountId?: string; date?: string; amount?: number }) => void;
 
   resetToDemoData: () => void;
+  deleteAllData: () => void;
   restoreFullBackup: (backupData: unknown) => boolean;
 }

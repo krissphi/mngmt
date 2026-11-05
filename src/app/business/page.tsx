@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/shared/page-header';
 import { BusinessSummaryTab } from '@/components/business/business-summary-tab';
@@ -15,19 +15,17 @@ type BusinessTab = 'summary' | 'assets' | 'products' | 'sales';
 function BusinessContent() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab') as BusinessTab | null;
+  const validTab = tabParam && ['summary', 'assets', 'products', 'sales'].includes(tabParam) ? tabParam : null;
 
-  const [activeTab, setActiveTab] = useState<BusinessTab>(() => {
-    if (tabParam && ['summary', 'assets', 'products', 'sales'].includes(tabParam)) {
-      return tabParam;
-    }
-    return 'summary';
-  });
+  const [prevTabParam, setPrevTabParam] = useState(tabParam);
+  const [activeTab, setActiveTab] = useState<BusinessTab>(validTab || 'summary');
 
-  useEffect(() => {
-    if (tabParam && ['summary', 'assets', 'products', 'sales'].includes(tabParam)) {
-      setActiveTab(tabParam);
+  if (tabParam !== prevTabParam) {
+    setPrevTabParam(tabParam);
+    if (validTab) {
+      setActiveTab(validTab);
     }
-  }, [tabParam]);
+  }
 
   const [quickModalOpen, setQuickModalOpen] = useState(false);
   const [quickModalTab, setQuickModalTab] = useState<'sale' | 'product'>('sale');

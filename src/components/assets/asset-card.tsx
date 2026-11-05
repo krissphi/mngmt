@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Asset } from '@/types';
+import { useStore } from '@/context/store-context';
 import { formatIDR } from '@/lib/currency';
 import { Pencil, ArrowRightLeft, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,7 +15,12 @@ interface AssetCardProps {
 }
 
 export function AssetCard({ asset, onEdit, onTransferToProduct, onDelete }: AssetCardProps) {
-  const diff = asset.currentEstimatedValue - asset.purchasePrice;
+  const { categories } = useStore();
+  const cost = asset.purchasePrice ?? asset.purchaseCost ?? 0;
+  const estVal = asset.currentEstimatedValue ?? asset.sellingPrice ?? 0;
+  const diff = estVal - cost;
+  const catName = (asset.categoryId ? categories.find((c) => c.id === asset.categoryId)?.name : undefined) || asset.category || 'Product';
+  const conditionStr = asset.condition ? asset.condition.replace('_', ' ') : 'good';
 
   return (
     <div className="p-4 rounded-xl border border-border/60 bg-card shadow-2xs hover:border-border transition-colors flex flex-col justify-between space-y-3">
@@ -22,24 +28,16 @@ export function AssetCard({ asset, onEdit, onTransferToProduct, onDelete }: Asse
       <div className="space-y-2">
         <div className="flex items-center justify-between text-[11px]">
           <span className="font-semibold uppercase text-[10px] text-muted-foreground px-2 py-0.5 rounded bg-muted">
-            {asset.category}
+            {catName}
           </span>
           <span className="text-muted-foreground capitalize text-[11px]">
-            Condition: <b className="text-foreground">{asset.condition.replace('_', ' ')}</b>
+            Condition: <b className="text-foreground">{conditionStr}</b>
           </span>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          {asset.imageUrl && (
-            <div className="size-11 rounded-md overflow-hidden bg-muted shrink-0 border border-border/40">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={asset.imageUrl} alt={asset.name} className="size-full object-cover" />
-            </div>
-          )}
-          <div className="min-w-0 flex-1">
-            <h4 className="font-semibold text-sm text-foreground line-clamp-1">{asset.name}</h4>
-            {asset.notes && <p className="text-[11px] text-muted-foreground truncate">{asset.notes}</p>}
-          </div>
+        <div className="pt-1">
+          <h4 className="font-semibold text-sm text-foreground line-clamp-1">{asset.name}</h4>
+          <p className="text-[11px] text-muted-foreground font-medium">{asset.brand || 'No Brand'}</p>
         </div>
       </div>
 
@@ -48,11 +46,11 @@ export function AssetCard({ asset, onEdit, onTransferToProduct, onDelete }: Asse
         <div className="flex justify-between items-baseline">
           <span className="text-xs text-muted-foreground">Market Estimate</span>
           <span className="text-sm font-bold text-foreground tabular-nums whitespace-nowrap">
-            {formatIDR(asset.currentEstimatedValue)}
+            {formatIDR(estVal)}
           </span>
         </div>
         <div className="flex justify-between items-center text-[11px] text-muted-foreground">
-          <span>Cost: {formatIDR(asset.purchasePrice)}</span>
+          <span>Cost: {formatIDR(cost)}</span>
           <span
             className={`font-semibold tabular-nums whitespace-nowrap ${
               diff >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'

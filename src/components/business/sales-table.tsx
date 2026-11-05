@@ -4,6 +4,7 @@ import React from 'react';
 import { Sale } from '@/types';
 import { formatIDR } from '@/lib/currency';
 import { Badge } from '@/components/ui/badge';
+import { Trash2 } from 'lucide-react';
 import {
   Table,
   TableHeader,
@@ -19,6 +20,7 @@ interface SalesTableProps {
   pageSize: number;
   isFiltered: boolean;
   onStatusChange: (id: string, newStatus: Sale['orderStatus']) => void;
+  onDeleteSale?: (sale: Sale) => void;
 }
 
 export function SalesTable({
@@ -27,6 +29,7 @@ export function SalesTable({
   pageSize,
   isFiltered,
   onStatusChange,
+  onDeleteSale,
 }: SalesTableProps) {
   return (
     <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
@@ -57,12 +60,17 @@ export function SalesTable({
             <TableHead className="py-3 px-4 text-center whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase">
               Status
             </TableHead>
+            {onDeleteSale && (
+              <TableHead className="w-12 text-center text-xs font-semibold text-muted-foreground uppercase py-3 px-2">
+                Action
+              </TableHead>
+            )}
           </TableRow>
         </TableHeader>
         <TableBody className="divide-y divide-border/60">
           {sales.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={8} className="py-8 text-center text-muted-foreground text-xs">
+              <TableCell colSpan={onDeleteSale ? 9 : 8} className="py-8 text-center text-muted-foreground text-xs">
                 {isFiltered ? 'No sales orders match your filter criteria.' : 'No sales orders recorded yet.'}
               </TableCell>
             </TableRow>
@@ -118,6 +126,17 @@ export function SalesTable({
                       <option value="returned">Returned</option>
                     </select>
                   </TableCell>
+                  {onDeleteSale && (
+                    <TableCell className="text-center whitespace-nowrap py-3 px-2">
+                      <button
+                        onClick={() => onDeleteSale(s)}
+                        className="p-1.5 text-muted-foreground hover:text-destructive rounded transition-colors"
+                        title="Delete sale order"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </TableCell>
+                  )}
                 </TableRow>
               );
             })

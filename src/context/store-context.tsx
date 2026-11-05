@@ -8,13 +8,13 @@ import {
 import {
   INITIAL_ACCOUNTS, INITIAL_CATEGORIES, INITIAL_SUPPLIERS, INITIAL_PRODUCTS,
   INITIAL_INVENTORY_MOVEMENTS, INITIAL_SALES, INITIAL_TRANSACTIONS,
-  INITIAL_BUDGETS, INITIAL_SAVINGS_GOALS, INITIAL_WISHLIST, INITIAL_ASSETS, INITIAL_SUBSCRIPTIONS
+  INITIAL_BUDGETS, INITIAL_SAVINGS_GOALS, INITIAL_WISHLIST, INITIAL_SUBSCRIPTIONS
 } from '@/lib/seed-data';
 import { loadStorageState, saveStorageState, clearStorageState } from './local-storage-adapter';
 import {
   applySaleToProducts, createInventoryMovement,
   cleanCategoryName, advanceNextBillingDate, deduplicateById,
-  applyDeleteTransaction, applySaleStatusUpdateSingle
+  applyDeleteTransaction, applySaleStatusUpdateSingle, isCancelledOrReturned
 } from './store-handlers';
 import { StoreContextType } from './store-types';
 
@@ -39,8 +39,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [budgets, setBudgets] = useState<Budget[]>(INITIAL_BUDGETS);
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>(INITIAL_SAVINGS_GOALS);
   const [wishlist, setWishlist] = useState<WishlistItem[]>(INITIAL_WISHLIST);
-  const [assets, setAssets] = useState<Asset[]>(INITIAL_ASSETS);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>(INITIAL_SUBSCRIPTIONS);
+
+  // Unified Products & Personal Assets: Assets are products with productType 'asset' | 'personal_collection'
+  const assets: Asset[] = useMemo(() => {
+    return products
+      .filter((p) => p.productType === 'asset' || p.productType === 'personal_collection')
+      .map((p) => ({
+        ...p,
+        purchasePrice: p.purchasePrice ?? p.purchaseCost,
+        currentEstimatedValue: p.currentEstimatedValue ?? p.sellingPrice,
+        condition: p.condition || 'good',
+        category: p.category || '',
+      }));
+  }, [products]);
 
   // IndexedDB + LocalStorage migration load
   useEffect(() => {
@@ -49,14 +61,48 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         if (s.accounts) setAccounts(deduplicateById(s.accounts));
         if (s.categories) setCategories(deduplicateById(s.categories).map((c) => ({ ...c, name: cleanCategoryName(c.name) })));
         if (s.suppliers) setSuppliers(deduplicateById(s.suppliers));
-        if (s.products) setProducts(deduplicateById(s.products));
+
+        let loadedProducts = s.products ? deduplicateById(s.products) : INITIAL_PRODUCTS;
+        // Migrate legacy s.assets if any exist into loadedProducts
+        if (s.assets && s.assets.length > 0) {
+          const existingIds = new Set(loadedProducts.map((p) => p.id));
+          const migrated: Product[] = s.assets
+            .filter((a) => !existingIds.has(a.id))
+            .map((a) => ({
+              id: a.id,
+              sku: a.sku || `AST-${a.id.slice(-4)}`,
+              name: a.name,
+              brand: a.brand || '',
+              categoryId: a.categoryId,
+              category: cleanCategoryName(a.category || ''),
+              purchaseCost: a.purchasePrice ?? a.purchaseCost ?? 0,
+              purchasePrice: a.purchasePrice ?? a.purchaseCost ?? 0,
+              sellingPrice: a.currentEstimatedValue ?? a.sellingPrice ?? 0,
+              currentEstimatedValue: a.currentEstimatedValue ?? a.sellingPrice ?? 0,
+              condition: a.condition || 'good',
+              productType: 'asset',
+              stockOnHand: 1,
+              stockReserved: 0,
+              stockSold: 0,
+              minStockAlert: 0,
+              status: 'active',
+              imageUrl: a.imageUrl,
+              notes: a.notes || a.description || '',
+              description: a.description || a.notes || '',
+              purchaseDate: a.purchaseDate,
+              createdAt: a.createdAt || new Date().toISOString(),
+              updatedAt: a.updatedAt || new Date().toISOString(),
+            }));
+          loadedProducts = [...loadedProducts, ...migrated];
+        }
+        setProducts(loadedProducts);
+
         if (s.inventoryMovements) setInventoryMovements(deduplicateById(s.inventoryMovements));
         if (s.sales) setSales(deduplicateById(s.sales));
         if (s.transactions) setTransactions(deduplicateById(s.transactions));
         if (s.budgets) setBudgets(deduplicateById(s.budgets));
         if (s.savingsGoals) setSavingsGoals(deduplicateById(s.savingsGoals));
         if (s.wishlist) setWishlist(deduplicateById(s.wishlist));
-        if (s.assets) setAssets(deduplicateById(s.assets).map((a) => ({ ...a, category: cleanCategoryName(a.category) })));
         if (s.subscriptions) setSubscriptions(deduplicateById(s.subscriptions));
       }
       setIsLoaded(true);
@@ -236,6 +282,58 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const deleteSale = useCallback((saleId: string) => {
+    const now = new Date().toISOString();
+    setSales((prevSales) => {
+      const targetSale = prevSales.find((s) => s.id === saleId);
+      if (!targetSale) return prevSales;
+
+      // 1. Rollback stock if order was active (not cancelled or returned)
+      if (!isCancelledOrReturned(targetSale.orderStatus)) {
+        setProducts((prevProds) => {
+          const movements: InventoryMovement[] = [];
+          const updated = prevProds.map((prod) => {
+            const soldItem = targetSale.items.find((i) => i.productId === prod.id);
+            if (!soldItem) return prod;
+            const newStock = prod.stockOnHand + soldItem.quantity;
+            const newSold = Math.max(0, (prod.stockSold || 0) - soldItem.quantity);
+            movements.push({
+              id: generateSecureId('mov'),
+              productId: prod.id,
+              type: 'return_in',
+              quantity: soldItem.quantity,
+              previousStock: prod.stockOnHand,
+              newStock,
+              referenceId: targetSale.id,
+              notes: `Rollback deleted sale #${targetSale.orderNumber}`,
+              createdAt: now.replace('T', ' ').substring(0, 19),
+            });
+            return { ...prod, stockOnHand: newStock, stockSold: newSold, updatedAt: now };
+          });
+          if (movements.length > 0) {
+            setTimeout(() => setInventoryMovements((m) => [...movements, ...m]), 0);
+          }
+          return updated;
+        });
+      }
+
+      // 2. Revert associated account transaction if payment was recorded
+      setTransactions((prevTrx) => {
+        const related = prevTrx.find((t) => t.referenceId === saleId);
+        if (related) {
+          setAccounts((prevAccs) => {
+            const { updatedAccounts } = applyDeleteTransaction(prevTrx, prevAccs, related.id);
+            return updatedAccounts;
+          });
+          return prevTrx.filter((t) => t.id !== related.id);
+        }
+        return prevTrx;
+      });
+
+      return prevSales.filter((s) => s.id !== saleId);
+    });
+  }, []);
+
   const addAccount = useCallback((a: Omit<Account, 'id' | 'createdAt' | 'updatedAt'>) => {
     const newA: Account = { ...a, id: generateSecureId('acc'), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     setAccounts((prev) => [...prev, newA]);
@@ -268,20 +366,76 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const updateWishlistItem = useCallback((id: string, u: Partial<WishlistItem>) => setWishlist((p) => p.map((w) => w.id === id ? { ...w, ...u } : w)), []);
   const deleteWishlistItem = useCallback((id: string) => setWishlist((p) => p.filter((w) => w.id !== id)), []);
 
-  const addAsset = useCallback((a: Omit<Asset, 'id' | 'createdAt' | 'updatedAt'>, paymentAccountId?: string) => {
+  const addAsset = useCallback((a: Omit<Asset, 'id' | 'createdAt' | 'updatedAt' | 'sku'> & { sku?: string }, paymentAccountId?: string): Asset => {
     const now = new Date().toISOString();
-    const newA: Asset = { ...a, id: generateSecureId('ast'), createdAt: now, updatedAt: now };
-    setAssets((prev) => [newA, ...prev]);
-    if (paymentAccountId && a.purchasePrice > 0) {
+    const cost = Number(a.purchaseCost ?? a.purchasePrice) || 0;
+    const estVal = Number(a.sellingPrice ?? a.currentEstimatedValue) || cost;
+    const newA: Asset = {
+      ...a,
+      id: generateSecureId('ast'),
+      sku: a.sku || `AST-${Date.now().toString().slice(-4)}`,
+      name: a.name || '',
+      brand: a.brand || '',
+      categoryId: a.categoryId,
+      category: a.category || '',
+      purchaseCost: cost,
+      purchasePrice: cost,
+      sellingPrice: estVal,
+      currentEstimatedValue: estVal,
+      condition: a.condition || 'good',
+      productType: 'asset',
+      stockOnHand: 1,
+      stockReserved: 0,
+      stockSold: 0,
+      minStockAlert: 0,
+      status: 'active',
+      imageUrl: a.imageUrl,
+      notes: a.notes || a.description || '',
+      description: a.description || a.notes || '',
+      purchaseDate: a.purchaseDate || now.split('T')[0],
+      createdAt: now,
+      updatedAt: now,
+    };
+    setProducts((prev) => [newA, ...prev]);
+    if (paymentAccountId && cost > 0) {
       addTransaction({
-        date: a.purchaseDate || now.split('T')[0], scope: 'personal', type: 'expense', amount: a.purchasePrice,
-        accountId: paymentAccountId, sourceModule: 'personal_expense', description: `Collectible Asset: ${a.name}`, referenceId: newA.id,
+        date: newA.purchaseDate || now.split('T')[0],
+        scope: 'personal',
+        type: 'expense',
+        amount: cost,
+        accountId: paymentAccountId,
+        sourceModule: 'personal_expense',
+        description: `Collectible Asset: ${newA.name}`,
+        referenceId: newA.id,
       });
     }
     return newA;
   }, [addTransaction]);
-  const updateAsset = useCallback((id: string, u: Partial<Asset>) => setAssets((p) => p.map((a) => a.id === id ? { ...a, ...u } : a)), []);
-  const deleteAsset = useCallback((id: string) => setAssets((p) => p.filter((a) => a.id !== id)), []);
+
+  const updateAsset = useCallback((id: string, u: Partial<Asset>) => {
+    setProducts((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        const cost = u.purchaseCost ?? u.purchasePrice ?? p.purchaseCost;
+        const estVal = u.sellingPrice ?? u.currentEstimatedValue ?? p.sellingPrice;
+        return {
+          ...p,
+          ...u,
+          purchaseCost: cost,
+          purchasePrice: cost,
+          sellingPrice: estVal,
+          currentEstimatedValue: estVal,
+          notes: u.notes ?? u.description ?? p.notes,
+          description: u.description ?? u.notes ?? p.description,
+          updatedAt: new Date().toISOString(),
+        };
+      })
+    );
+  }, []);
+
+  const deleteAsset = useCallback((id: string) => {
+    setProducts((prev) => prev.filter((p) => p.id !== id));
+  }, []);
 
   const addSupplier = useCallback((s: Omit<Supplier, 'id' | 'createdAt'>) => {
     const newS: Supplier = { ...s, id: generateSecureId('sup'), createdAt: new Date().toISOString() };
@@ -322,7 +476,36 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setAccounts(INITIAL_ACCOUNTS); setCategories(INITIAL_CATEGORIES); setSuppliers(INITIAL_SUPPLIERS); setProducts(INITIAL_PRODUCTS);
     setInventoryMovements(INITIAL_INVENTORY_MOVEMENTS); setSales(INITIAL_SALES);
     setTransactions(INITIAL_TRANSACTIONS); setBudgets(INITIAL_BUDGETS); setSavingsGoals(INITIAL_SAVINGS_GOALS);
-    setWishlist(INITIAL_WISHLIST); setAssets(INITIAL_ASSETS); setSubscriptions(INITIAL_SUBSCRIPTIONS);
+    setWishlist(INITIAL_WISHLIST); setSubscriptions(INITIAL_SUBSCRIPTIONS);
+  }, []);
+
+  const deleteAllData = useCallback(() => {
+    clearStorageState();
+    setAccounts([]);
+    setCategories(INITIAL_CATEGORIES);
+    setSuppliers([]);
+    setProducts([]);
+    setInventoryMovements([]);
+    setSales([]);
+    setTransactions([]);
+    setBudgets([]);
+    setSavingsGoals([]);
+    setWishlist([]);
+    setSubscriptions([]);
+    saveStorageState({
+      accounts: [],
+      categories: INITIAL_CATEGORIES,
+      suppliers: [],
+      products: [],
+      inventoryMovements: [],
+      sales: [],
+      transactions: [],
+      budgets: [],
+      savingsGoals: [],
+      wishlist: [],
+      assets: [],
+      subscriptions: [],
+    });
   }, []);
 
   const restoreFullBackup = useCallback((raw: unknown): boolean => {
@@ -332,14 +515,47 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (Array.isArray(data.accounts)) setAccounts(deduplicateById(data.accounts as Account[]));
       if (Array.isArray(data.categories)) setCategories(deduplicateById(data.categories as Category[]));
       if (Array.isArray(data.suppliers)) setSuppliers(deduplicateById(data.suppliers as Supplier[]));
-      if (Array.isArray(data.products)) setProducts(deduplicateById(data.products as Product[]));
+      if (Array.isArray(data.products)) {
+        let prods = deduplicateById(data.products as Product[]);
+        if (Array.isArray(data.assets) && data.assets.length > 0) {
+          const existingIds = new Set(prods.map((p) => p.id));
+          const migrated: Product[] = (data.assets as Asset[])
+            .filter((a) => a && a.id && !existingIds.has(a.id))
+            .map((a) => ({
+              id: a.id,
+              sku: a.sku || `AST-${a.id.slice(-4)}`,
+              name: a.name || 'Unnamed Asset',
+              brand: a.brand || '',
+              categoryId: a.categoryId,
+              category: a.category || '',
+              purchaseCost: a.purchasePrice ?? a.purchaseCost ?? 0,
+              purchasePrice: a.purchasePrice ?? a.purchaseCost ?? 0,
+              sellingPrice: a.currentEstimatedValue ?? a.sellingPrice ?? 0,
+              currentEstimatedValue: a.currentEstimatedValue ?? a.sellingPrice ?? 0,
+              condition: a.condition || 'good',
+              productType: 'asset',
+              stockOnHand: 1,
+              stockReserved: 0,
+              stockSold: 0,
+              minStockAlert: 0,
+              status: 'active',
+              imageUrl: a.imageUrl,
+              notes: a.notes || a.description || '',
+              description: a.description || a.notes || '',
+              purchaseDate: a.purchaseDate,
+              createdAt: a.createdAt || new Date().toISOString(),
+              updatedAt: a.updatedAt || new Date().toISOString(),
+            }));
+          prods = [...prods, ...migrated];
+        }
+        setProducts(prods);
+      }
       if (Array.isArray(data.inventoryMovements)) setInventoryMovements(deduplicateById(data.inventoryMovements as InventoryMovement[]));
       if (Array.isArray(data.sales)) setSales(deduplicateById(data.sales as Sale[]));
       if (Array.isArray(data.transactions)) setTransactions(deduplicateById(data.transactions as Transaction[]));
       if (Array.isArray(data.budgets)) setBudgets(deduplicateById(data.budgets as Budget[]));
       if (Array.isArray(data.savingsGoals)) setSavingsGoals(deduplicateById(data.savingsGoals as SavingsGoal[]));
       if (Array.isArray(data.wishlist)) setWishlist(deduplicateById(data.wishlist as WishlistItem[]));
-      if (Array.isArray(data.assets)) setAssets(deduplicateById(data.assets as Asset[]));
       if (Array.isArray(data.subscriptions)) setSubscriptions(deduplicateById(data.subscriptions as Subscription[]));
       return true;
     } catch {
@@ -351,11 +567,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     accounts, categories, suppliers, products, inventoryMovements, sales,
     transactions, budgets, savingsGoals, wishlist, assets, subscriptions, isLoaded,
     addTransaction, addTransactionsBatch, deleteTransaction, addProduct, addProductsBatch, updateProduct, deleteProduct,
-    adjustStock, recordSale, updateSaleStatus,
+    adjustStock, recordSale, updateSaleStatus, deleteSale,
     addAccount, updateAccount, deleteAccount, addBudget, updateBudget, deleteBudget, addSavingsGoal,
     updateSavingsGoal, deleteSavingsGoal, addWishlistItem, updateWishlistItem, deleteWishlistItem,
     addAsset, updateAsset, deleteAsset, addSupplier, deleteSupplier, addSubscription, updateSubscription,
-    deleteSubscription, paySubscription, resetToDemoData, restoreFullBackup,
+    deleteSubscription, paySubscription, resetToDemoData, deleteAllData, restoreFullBackup,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [accounts, categories, suppliers, products, inventoryMovements, sales, transactions, budgets, savingsGoals, wishlist, assets, subscriptions, isLoaded]);
 

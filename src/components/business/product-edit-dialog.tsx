@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
-import { ImageUpload } from '@/components/shared/image-upload';
 import { Trash2 } from 'lucide-react';
 
 interface ProductEditDialogProps {
@@ -25,7 +24,6 @@ export function ProductEditDialog({ open, onOpenChange, product }: ProductEditDi
   const [purchaseCost, setPurchaseCost] = useState(product ? String(product.purchaseCost) : '');
   const [sellingPrice, setSellingPrice] = useState(product ? String(product.sellingPrice) : '');
   const [minStockAlert, setMinStockAlert] = useState(product ? String(product.minStockAlert || 2) : '2');
-  const [imageUrl, setImageUrl] = useState(product?.imageUrl || '');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   if (product !== prevProduct) {
@@ -37,7 +35,6 @@ export function ProductEditDialog({ open, onOpenChange, product }: ProductEditDi
       setPurchaseCost(String(product.purchaseCost));
       setSellingPrice(String(product.sellingPrice));
       setMinStockAlert(String(product.minStockAlert || 2));
-      setImageUrl(product.imageUrl || '');
     }
   }
 
@@ -52,7 +49,6 @@ export function ProductEditDialog({ open, onOpenChange, product }: ProductEditDi
       purchaseCost: Number(purchaseCost) || 0,
       sellingPrice: Number(sellingPrice) || 0,
       minStockAlert: Number(minStockAlert) || 0,
-      imageUrl: imageUrl || undefined,
     });
 
     onOpenChange(false);
@@ -144,12 +140,6 @@ export function ProductEditDialog({ open, onOpenChange, product }: ProductEditDi
               />
             </div>
           </div>
-
-          <ImageUpload
-            value={imageUrl}
-            onChange={setImageUrl}
-            label="Product Photo"
-          />
 
           <DialogFooter className="pt-2 flex items-center justify-between sm:justify-between w-full">
             <Button

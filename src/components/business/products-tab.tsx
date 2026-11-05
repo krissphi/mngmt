@@ -29,8 +29,12 @@ export function ProductsTab({ onOpenAddProduct, onOpenAdjust }: ProductsTabProps
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
 
-  const totalOnHand = useMemo(() => products.reduce((acc, p) => acc + p.stockOnHand, 0), [products]);
-  const lowStockCount = useMemo(() => products.filter((p) => p.stockOnHand <= p.minStockAlert).length, [products]);
+  const saleProducts = useMemo(() => {
+    return products.filter((p) => p.productType !== 'asset' && p.productType !== 'personal_collection');
+  }, [products]);
+
+  const totalOnHand = useMemo(() => saleProducts.reduce((acc, p) => acc + p.stockOnHand, 0), [saleProducts]);
+  const lowStockCount = useMemo(() => saleProducts.filter((p) => p.stockOnHand <= p.minStockAlert).length, [saleProducts]);
 
   const isFiltered = searchQuery !== '' || selectedCategory !== 'all' || stockStatus !== 'all' || sortBy !== 'name';
 
@@ -47,7 +51,7 @@ export function ProductsTab({ onOpenAddProduct, onOpenAdjust }: ProductsTabProps
 
   const filteredProducts = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return products
+    return saleProducts
       .filter((p) => {
         const catName = p.categoryId ? categoryNameMap.get(p.categoryId) || '' : '';
         const matchesQuery = !q || (
@@ -73,7 +77,7 @@ export function ProductsTab({ onOpenAddProduct, onOpenAdjust }: ProductsTabProps
         if (sortBy === 'price_asc') return a.sellingPrice - b.sellingPrice;
         return a.name.localeCompare(b.name);
       });
-  }, [products, categoryNameMap, searchQuery, selectedCategory, stockStatus, sortBy]);
+  }, [saleProducts, categoryNameMap, searchQuery, selectedCategory, stockStatus, sortBy]);
 
   return (
     <div className="space-y-4">

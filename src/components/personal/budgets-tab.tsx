@@ -37,6 +37,10 @@ export function BudgetsTab() {
     return new Map(categories.map((c) => [c.id, c.name]));
   }, [categories]);
 
+  const budgetedCategoryIds = useMemo(() => {
+    return new Set(budgets.filter((b) => b.month === currentMonth).map((b) => b.categoryId));
+  }, [budgets, currentMonth]);
+
   // Pre-calculate spending by category and month: O(T) single pass instead of O(B * T)
   const spentByBudgetMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -118,11 +122,16 @@ export function BudgetsTab() {
                 className="w-full h-8.5 rounded-md border border-input bg-card px-2.5 text-xs text-foreground focus-visible:outline-none"
               >
                 <option value="">Select an expense category...</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
+                {categories
+                  .filter((c) => c.type === 'personal_expense')
+                  .map((c) => {
+                    const isAlreadyBudgeted = budgetedCategoryIds.has(c.id);
+                    return (
+                      <option key={c.id} value={c.id} disabled={isAlreadyBudgeted}>
+                        {c.name} {isAlreadyBudgeted ? '(Already Budgeted)' : ''}
+                      </option>
+                    );
+                  })}
               </select>
             </div>
             <div>

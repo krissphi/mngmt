@@ -4,7 +4,7 @@ import React, { useState, useRef } from 'react';
 import { useStore } from '@/context/store-context';
 import { useTheme } from '@/components/theme-provider';
 import { usePwa } from '@/components/pwa/pwa-provider';
-import { RefreshCw, Download, Upload, CheckCircle, AlertCircle, Smartphone, Wifi } from 'lucide-react';
+import { RefreshCw, Download, Upload, CheckCircle, AlertCircle, Smartphone, Wifi, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -13,14 +13,16 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 
 export default function SettingsPage() {
   const store = useStore();
-  const { resetToDemoData, restoreFullBackup } = store;
+  const { resetToDemoData, deleteAllData, restoreFullBackup } = store;
   const { theme, setTheme } = useTheme();
   const { isInstallable, isInstalled, isOffline, installApp } = usePwa();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [resetSuccess, setResetSuccess] = useState(false);
+  const [deleteSuccess, setDeleteSuccess] = useState(false);
   const [backupSuccess, setBackupSuccess] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [importStatus, setImportStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [importErrorMessage, setImportErrorMessage] = useState('');
 
@@ -29,6 +31,13 @@ export default function SettingsPage() {
     setShowResetConfirm(false);
     setResetSuccess(true);
     setTimeout(() => setResetSuccess(false), 2500);
+  };
+
+  const handleConfirmDelete = () => {
+    deleteAllData();
+    setShowDeleteConfirm(false);
+    setDeleteSuccess(true);
+    setTimeout(() => setDeleteSuccess(false), 2500);
   };
 
   const handleExportBackup = () => {
@@ -192,23 +201,48 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* 2. Demo Data Reset */}
+        {/* 2. Database Maintenance & Reset */}
         <Card className="border-border/60 bg-card">
           <CardHeader className="py-4 px-5 border-b border-border/60">
-            <CardTitle className="text-sm font-semibold text-foreground">Demo Data Reset</CardTitle>
+            <CardTitle className="text-sm font-semibold text-foreground">Database Maintenance & Reset</CardTitle>
           </CardHeader>
-          <CardContent className="p-5 space-y-3">
-            <p className="text-xs text-muted-foreground">
-              Reset the database back to initial demo data (sample products, bank accounts, budgets, and orders).
-            </p>
-            <Button onClick={() => setShowResetConfirm(true)} variant="outline" size="sm" className="text-xs h-8">
-              <RefreshCw className="size-3.5 mr-1" />
-              <span>Reset Demo Data</span>
-            </Button>
+          <CardContent className="p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/40">
+              <div className="space-y-0.5">
+                <p className="text-xs font-semibold text-foreground">Reset to Sample Demo Data</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Populate the application with sample products, transactions, bank accounts, and budgets.
+                </p>
+              </div>
+              <Button onClick={() => setShowResetConfirm(true)} variant="outline" size="sm" className="text-xs h-8 shrink-0">
+                <RefreshCw className="size-3.5 mr-1" />
+                <span>Reset Demo Data</span>
+              </Button>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">Delete All Application Data</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Permanently wipe all accounts, transactions, products, sales, and records to start from a completely clean slate.
+                </p>
+              </div>
+              <Button onClick={() => setShowDeleteConfirm(true)} variant="destructive" size="sm" className="text-xs h-8 shrink-0">
+                <Trash2 className="size-3.5 mr-1" />
+                <span>Delete All Data</span>
+              </Button>
+            </div>
+
             {resetSuccess && (
               <div className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 pt-1">
                 <CheckCircle className="size-3.5" />
                 <span>Demo data restored successfully.</span>
+              </div>
+            )}
+            {deleteSuccess && (
+              <div className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 pt-1">
+                <CheckCircle className="size-3.5" />
+                <span>All application data deleted successfully. Starting with a clean slate.</span>
               </div>
             )}
           </CardContent>
@@ -245,11 +279,23 @@ export default function SettingsPage() {
         onOpenChange={setShowResetConfirm}
         title="Reset Demo Data?"
         description="All existing transactions, product inventories, and customized accounts will be reset to default demo values. Are you sure you want to proceed?"
-        confirmText="Reset All Data"
+        confirmText="Reset to Demo"
         cancelText="Cancel"
         variant="destructive"
         icon="warning"
         onConfirm={handleConfirmReset}
+      />
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        title="Delete All Data Permanently?"
+        description="This will permanently delete all your accounts, products, sales, transactions, budgets, wishlist, and subscriptions. The application will be reset to a clean blank slate. This action cannot be undone."
+        confirmText="Delete Everything"
+        cancelText="Cancel"
+        variant="destructive"
+        icon="warning"
+        onConfirm={handleConfirmDelete}
       />
     </div>
   );

@@ -171,13 +171,24 @@ export function SubscriptionDialog({ open, onOpenChange, initialSubscription }: 
                 className="w-full h-9 rounded-md border border-input bg-card px-3 py-1 text-xs"
               >
                 <option value="">Select Category...</option>
-                {categories
-                  .filter((c) => c.type.includes('expense'))
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
+                <optgroup label="Personal Expenses">
+                  {categories
+                    .filter((c) => c.type === 'personal_expense')
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                </optgroup>
+                <optgroup label="Business Expenses">
+                  {categories
+                    .filter((c) => c.type === 'business_expense')
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                </optgroup>
               </select>
             </div>
           </div>

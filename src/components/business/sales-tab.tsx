@@ -6,6 +6,8 @@ import { Plus, Search, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TablePagination } from '@/components/shared/table-pagination';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { Sale } from '@/types';
 import { SalesTable } from './sales-table';
 
 interface SalesTabProps {
@@ -13,7 +15,8 @@ interface SalesTabProps {
 }
 
 export function SalesTab({ onOpenAddSale }: SalesTabProps) {
-  const { sales, updateSaleStatus } = useStore();
+  const { sales, updateSaleStatus, deleteSale } = useStore();
+  const [deletingSale, setDeletingSale] = useState<Sale | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChannel, setSelectedChannel] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
@@ -191,6 +194,7 @@ export function SalesTab({ onOpenAddSale }: SalesTabProps) {
         pageSize={pageSize}
         isFiltered={isFiltered}
         onStatusChange={updateSaleStatus}
+        onDeleteSale={setDeletingSale}
       />
 
       <TablePagination
@@ -201,6 +205,21 @@ export function SalesTab({ onOpenAddSale }: SalesTabProps) {
         onPageChange={setCurrentPage}
         onPageSizeChange={setPageSize}
         pageSizeOptions={[10, 25, 50]}
+      />
+
+      <ConfirmDialog
+        open={!!deletingSale}
+        onOpenChange={(open) => !open && setDeletingSale(null)}
+        title="Delete Sales Order?"
+        description={`Are you sure you want to delete order #${deletingSale?.orderNumber}? If this order was active, item stock will be restored to your inventory and any recorded payment transaction will be removed.`}
+        confirmText="Delete Order"
+        cancelText="Cancel"
+        onConfirm={() => {
+          if (deletingSale) {
+            deleteSale(deletingSale.id);
+            setDeletingSale(null);
+          }
+        }}
       />
     </div>
   );

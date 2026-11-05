@@ -39,6 +39,7 @@ export function BalanceSheetTab() {
     const categoryGroupMap = new Map<string, { categoryName: string; skuCount: number; units: number; totalCost: number }>();
 
     for (const p of products) {
+      if (p.productType === 'asset' || p.productType === 'personal_collection') continue;
       const itemCost = p.stockOnHand * p.purchaseCost;
       totalVal += itemCost;
       totalUnits += p.stockOnHand;
@@ -61,15 +62,15 @@ export function BalanceSheetTab() {
 
   // 3. Personal & Collectible Assets
   const activeAssets = useMemo(
-    () => assets.filter((a) => a.status === 'owned' || a.status === 'for_sale'),
+    () => assets.filter((a) => a.status === 'active'),
     [assets]
   );
   const totalAssetMarketValue = useMemo(
-    () => activeAssets.reduce((sum, a) => sum + a.currentEstimatedValue, 0),
+    () => activeAssets.reduce((sum, a) => sum + (a.currentEstimatedValue || 0), 0),
     [activeAssets]
   );
   const totalAssetCostValue = useMemo(
-    () => activeAssets.reduce((sum, a) => sum + a.purchasePrice, 0),
+    () => activeAssets.reduce((sum, a) => sum + (a.purchasePrice || 0), 0),
     [activeAssets]
   );
   const assetUnrealizedGain = totalAssetMarketValue - totalAssetCostValue;
@@ -78,14 +79,15 @@ export function BalanceSheetTab() {
   const assetsByCategory = useMemo(() => {
     const map = new Map<string, { categoryName: string; count: number; cost: number; marketVal: number }>();
     activeAssets.forEach((a) => {
-      const entry = map.get(a.category) || { categoryName: a.category, count: 0, cost: 0, marketVal: 0 };
+      const catName = (a.categoryId ? categories.find((c) => c.id === a.categoryId)?.name : undefined) || a.category || 'General';
+      const entry = map.get(catName) || { categoryName: catName, count: 0, cost: 0, marketVal: 0 };
       entry.count += 1;
-      entry.cost += a.purchasePrice;
-      entry.marketVal += a.currentEstimatedValue;
-      map.set(a.category, entry);
+      entry.cost += a.purchasePrice || 0;
+      entry.marketVal += a.currentEstimatedValue || 0;
+      map.set(catName, entry);
     });
     return Array.from(map.values()).sort((a, b) => b.marketVal - a.marketVal);
-  }, [activeAssets]);
+  }, [activeAssets, categories]);
 
   // TOTAL ASSETS
   const totalAssets = totalCashAndBank + inventoryTotalValue + totalAssetMarketValue;
