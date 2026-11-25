@@ -2,7 +2,9 @@
 
 import React, { useState, useMemo } from 'react';
 import { useStore } from '@/context/store-context';
-import { Search } from 'lucide-react';
+import { SummaryBanner } from '@/components/shared/summary-banner';
+import { Search, RotateCcw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   Table,
@@ -19,19 +21,36 @@ import { TablePagination } from '@/components/shared/table-pagination';
 export function StockMovementTable() {
   const { inventoryMovements, products } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  const isFiltered = searchQuery !== '' || typeFilter !== 'all';
+
   const filteredMovements = useMemo(() => {
+    const q = searchQuery.toLowerCase();
     return inventoryMovements.filter((m) => {
-      const q = searchQuery.toLowerCase();
+      if (typeFilter !== 'all' && m.type !== typeFilter) return false;
+      if (!q) return true;
       const prod = products.find((p) => p.id === m.productId);
       const prodName = prod?.name.toLowerCase() || '';
       const notes = (m.notes || '').toLowerCase();
       const type = m.type.toLowerCase();
       return prodName.includes(q) || notes.includes(q) || type.includes(q);
     });
-  }, [inventoryMovements, products, searchQuery]);
+  }, [inventoryMovements, products, searchQuery, typeFilter]);
+
+  const { restockCount, saleOutCount, adjustCount } = useMemo(() => {
+    let restocks = 0;
+    let salesOut = 0;
+    let adj = 0;
+    for (const m of filteredMovements) {
+      if (m.type === 'purchase_in') restocks++;
+      else if (m.type === 'sale_out' || m.type === 'reserved') salesOut++;
+      else adj++;
+    }
+    return { restockCount: restocks, saleOutCount: salesOut, adjustCount: adj };
+  }, [filteredMovements]);
 
   const totalPages = Math.ceil(filteredMovements.length / pageSize) || 1;
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
@@ -42,9 +61,19 @@ export function StockMovementTable() {
   }, [filteredMovements, safeCurrentPage, pageSize]);
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="relative max-w-xs w-full">
+    <div className="space-y-5">
+      <SummaryBanner
+        label="Stock Movement Audit"
+        value={`${filteredMovements.length} ${filteredMovements.length === 1 ? 'Log' : 'Logs'}`}
+        meta={[
+          `${restockCount} Restocks`,
+          `${saleOutCount} Fulfillments`,
+          `${adjustCount} Adjustments & Returns`,
+        ]}
+      />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[180px] flex-1 max-w-xs">
           <Search className="size-3.5 absolute left-3 top-2.5 text-muted-foreground" />
           <Input
             placeholder="Search audit trail or notes..."
@@ -53,20 +82,54 @@ export function StockMovementTable() {
               setSearchQuery(e.target.value);
               setCurrentPage(1);
             }}
-            className="pl-8.5 h-8 text-xs"
+            className="pl-8.5 h-8.5 text-xs bg-card/50 border-border/60 rounded-xl"
           />
         </div>
-        <span className="text-xs text-muted-foreground tabular-nums">
-          {filteredMovements.length} logged movement{filteredMovements.length === 1 ? '' : 's'}
-        </span>
+
+        <select
+          value={typeFilter}
+          onChange={(e) => {
+            setTypeFilter(e.target.value);
+            setCurrentPage(1);
+          }}
+          className="h-8.5 rounded-xl border border-border/60 bg-card/50 px-2.5 text-xs text-foreground focus-visible:outline-none"
+          aria-label="Filter by movement type"
+        >
+          <option value="all">All Movement Types</option>
+          <option value="purchase_in">Purchase In (Restock)</option>
+          <option value="sale_out">Sale Out</option>
+          <option value="reserved">Reserved</option>
+          <option value="unreserved">Unreserved</option>
+          <option value="return_in">Return In</option>
+          <option value="adjustment_in">Adjustment In</option>
+          <option value="adjustment_out">Adjustment Out</option>
+          <option value="damaged">Damaged</option>
+        </select>
+
+        {isFiltered && (
+          <Button
+            onClick={() => {
+              setSearchQuery('');
+              setTypeFilter('all');
+              setCurrentPage(1);
+            }}
+            variant="ghost"
+            size="sm"
+            className="h-8.5 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1 rounded-xl"
+          >
+            <RotateCcw className="size-3" />
+            <span>Reset</span>
+          </Button>
+        )}
       </div>
 
       {filteredMovements.length === 0 ? (
-        searchQuery ? (
+        isFiltered ? (
           <NoSearchResultState
-            query={searchQuery}
+            query={searchQuery || typeFilter}
             onReset={() => {
               setSearchQuery('');
+              setTypeFilter('all');
               setCurrentPage(1);
             }}
           />
@@ -78,9 +141,9 @@ export function StockMovementTable() {
         )
       ) : (
         <>
-          <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
+          <div className="rounded-2xl border border-border/50 bg-card/60 backdrop-blur-xs overflow-hidden">
             <Table>
-              <TableHeader className="bg-muted/40">
+              <TableHeader className="bg-muted/30">
                 <TableRow className="hover:bg-transparent border-b border-border/60">
                   <TableHead className="w-12 text-center text-xs font-semibold text-muted-foreground uppercase py-3 px-3">
                     #
@@ -107,7 +170,7 @@ export function StockMovementTable() {
               </TableHeader>
               <TableBody className="divide-y divide-border/60">
                 {paginatedMovements.map((m, idx) => {
-                  const rowNumber = (currentPage - 1) * pageSize + idx + 1;
+                  const rowNumber = (safeCurrentPage - 1) * pageSize + idx + 1;
                   const prod = products.find((p) => p.id === m.productId);
 
                   return (

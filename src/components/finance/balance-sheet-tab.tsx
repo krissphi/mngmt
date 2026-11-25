@@ -4,6 +4,10 @@ import React, { useMemo } from 'react';
 import { format } from 'date-fns';
 import { useStore } from '@/context/store-context';
 import { formatIDR } from '@/lib/currency';
+import { isSellableProduct, isValidSale } from '@/lib/calculations';
+import { resolveCategoryPair } from '@/lib/categories';
+import { SummaryBanner } from '@/components/shared/summary-banner';
+import { StatCard } from '@/components/shared/stat-card';
 import {
   Wallet,
   Package,
@@ -11,7 +15,6 @@ import {
   ShieldCheck,
   Printer,
   TrendingUp,
-  Scale,
   CircleDollarSign,
   AlertCircle,
 } from 'lucide-react';
@@ -20,31 +23,45 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 export function BalanceSheetTab() {
-  const { accounts, products, assets, subscriptions, categories } = useStore();
+  const { accounts, products, assets, subscriptions, categories, sales, debts } = useStore();
 
   const todayStr = useMemo(() => format(new Date(), 'MMMM d, yyyy'), []);
 
-  // 1. Current Assets (Cash, Bank, E-Wallets)
+  // 1. Current Assets (Cash, Bank, E-Wallets + Receivables/Escrow)
   const activeAccounts = useMemo(() => accounts.filter((a) => a.isActive), [accounts]);
   const totalCashAndBank = useMemo(
     () => activeAccounts.reduce((sum, a) => sum + a.balance, 0),
     [activeAccounts]
   );
 
+  const pendingEscrowReceivables = useMemo(() => {
+    return sales
+      .filter((s) => isValidSale(s) && s.paymentStatus !== 'paid')
+      .reduce((sum, s) => sum + Math.max(0, s.grossSales - s.marketplaceFees - s.discounts), 0);
+  }, [sales]);
+
+  const openDebtsReceivable = useMemo(() => {
+    return debts
+      .filter((d) => d.status !== 'settled' && d.direction === 'receivable')
+      .reduce((sum, d) => sum + Math.max(0, d.totalAmount - d.paidAmount), 0);
+  }, [debts]);
+
+  const totalReceivables = pendingEscrowReceivables + openDebtsReceivable;
+
   // 2. Inventory Assets & Categorization (Single O(P) Pass)
   const { inventoryTotalValue, totalInventoryUnits, inventoryByCategory } = useMemo(() => {
     let totalVal = 0;
     let totalUnits = 0;
-    const catMap = new Map(categories.map((c) => [c.id, c.name]));
     const categoryGroupMap = new Map<string, { categoryName: string; skuCount: number; units: number; totalCost: number }>();
 
     for (const p of products) {
-      if (p.productType === 'asset' || p.productType === 'personal_collection') continue;
+      if (!isSellableProduct(p)) continue;
       const itemCost = p.stockOnHand * p.purchaseCost;
       totalVal += itemCost;
       totalUnits += p.stockOnHand;
 
-      const catName = (p.categoryId ? catMap.get(p.categoryId) : undefined) || 'General Goods';
+      const resolved = resolveCategoryPair(categories, p.categoryId, p.subCategoryId, 'General Goods');
+      const catName = resolved.mainName;
       const entry = categoryGroupMap.get(catName) || { categoryName: catName, skuCount: 0, units: 0, totalCost: 0 };
       entry.skuCount += 1;
       entry.units += p.stockOnHand;
@@ -75,11 +92,12 @@ export function BalanceSheetTab() {
   );
   const assetUnrealizedGain = totalAssetMarketValue - totalAssetCostValue;
 
-  // Group assets by category
+  // Group assets by main category
   const assetsByCategory = useMemo(() => {
     const map = new Map<string, { categoryName: string; count: number; cost: number; marketVal: number }>();
     activeAssets.forEach((a) => {
-      const catName = (a.categoryId ? categories.find((c) => c.id === a.categoryId)?.name : undefined) || a.category || 'General';
+      const resolved = resolveCategoryPair(categories, a.categoryId, a.subCategoryId, a.category || 'General');
+      const catName = resolved.mainName;
       const entry = map.get(catName) || { categoryName: catName, count: 0, cost: 0, marketVal: 0 };
       entry.count += 1;
       entry.cost += a.purchasePrice || 0;
@@ -90,115 +108,83 @@ export function BalanceSheetTab() {
   }, [activeAssets, categories]);
 
   // TOTAL ASSETS
-  const totalAssets = totalCashAndBank + inventoryTotalValue + totalAssetMarketValue;
+  const totalAssets = totalCashAndBank + totalReceivables + inventoryTotalValue + totalAssetMarketValue;
 
-  // 4. Liabilities (Short-Term Commitments / Active recurring subscriptions for the month)
+  // 4. Liabilities (Open Payables + Monthly Recurring Commitments)
+  const openPayables = useMemo(() => {
+    return debts.filter((d) => d.status !== 'settled' && d.direction === 'payable');
+  }, [debts]);
+  const totalPayables = useMemo(
+    () => openPayables.reduce((sum, d) => sum + Math.max(0, d.totalAmount - d.paidAmount), 0),
+    [openPayables]
+  );
   const activeSubs = useMemo(() => subscriptions.filter((s) => s.status === 'active'), [subscriptions]);
   const monthlySubscriptionLiabilities = useMemo(
     () => activeSubs.reduce((sum, s) => sum + (s.billingCycle === 'yearly' ? Math.round(s.amount / 12) : s.amount), 0),
     [activeSubs]
   );
-  const totalLiabilities = monthlySubscriptionLiabilities;
+  const totalLiabilities = totalPayables + monthlySubscriptionLiabilities;
 
   // 5. Net Worth / Owner's Equity (Total Assets - Liabilities)
   const netWorthEquity = totalAssets - totalLiabilities;
 
   // Asset Percentages
-  const cashPercent = totalAssets > 0 ? ((totalCashAndBank / totalAssets) * 100).toFixed(1) : '0';
+  const cashPercent = totalAssets > 0 ? (((totalCashAndBank + totalReceivables) / totalAssets) * 100).toFixed(1) : '0';
   const inventoryPercent = totalAssets > 0 ? ((inventoryTotalValue / totalAssets) * 100).toFixed(1) : '0';
   const collectiblesPercent = totalAssets > 0 ? ((totalAssetMarketValue / totalAssets) * 100).toFixed(1) : '0';
 
   return (
     <div className="space-y-6">
-      {/* Header Actions & Date */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-muted/30 rounded-xl border border-border/60">
-        <div>
-          <div className="flex items-center gap-2">
-            <Scale className="size-4.5 text-primary" />
-            <h2 className="text-base font-bold text-foreground">Balance Sheet Statement</h2>
-          </div>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Statement of liquid assets, business inventory value, and personal assets as of <b>{todayStr}</b>.
-          </p>
-        </div>
-        <Button
-          onClick={() => window.print()}
-          variant="outline"
-          size="sm"
-          className="text-xs h-8 gap-1.5 self-start sm:self-auto"
-        >
-          <Printer className="size-3.5" />
-          <span>Print Statement</span>
-        </Button>
-      </div>
+      <SummaryBanner
+        label="Net Worth (Owner's Equity)"
+        value={formatIDR(netWorthEquity)}
+        meta={[
+          `As of ${todayStr}`,
+          `Assets ${formatIDR(totalAssets)}`,
+          `Liabilities ${formatIDR(totalLiabilities)}`,
+        ]}
+        actions={
+          <Button
+            onClick={() => window.print()}
+            variant="outline"
+            size="sm"
+            className="text-xs h-8.5 gap-1.5 rounded-lg border-border/60 print:hidden"
+          >
+            <Printer className="size-3.5" />
+            <span>Print Statement</span>
+          </Button>
+        }
+      />
 
       {/* KPI Highlights */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Assets */}
-        <Card className="border-border/60 bg-card shadow-2xs">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Total Assets</span>
-              <div className="size-7 rounded-md bg-primary/10 text-primary flex items-center justify-center">
-                <CircleDollarSign className="size-4" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-foreground mt-2">{formatIDR(totalAssets)}</div>
-            <div className="text-[11px] text-muted-foreground mt-1">All liquid cash, inventory & personal assets</div>
-          </CardContent>
-        </Card>
-
-        {/* Liquid Cash */}
-        <Card className="border-border/60 bg-card shadow-2xs">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Cash & Bank Liquidity</span>
-              <div className="size-7 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                <Wallet className="size-4" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-2">
-              {formatIDR(totalCashAndBank)}
-            </div>
-            <div className="text-[11px] text-muted-foreground mt-1">
-              Liquidity ratio: <b className="text-foreground">{cashPercent}%</b>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Inventory Capital */}
-        <Card className="border-border/60 bg-card shadow-2xs">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Business Inventory Capital</span>
-              <div className="size-7 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-                <Package className="size-4" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-2">
-              {formatIDR(inventoryTotalValue)}
-            </div>
-            <div className="text-[11px] text-muted-foreground mt-1">
-              {totalInventoryUnits} units in stock ({inventoryPercent}%)
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Net Worth / Equity */}
-        <Card className="border-border/60 bg-card shadow-2xs">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Net Worth (Owner&apos;s Equity)</span>
-              <div className="size-7 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                <ShieldCheck className="size-4" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-foreground mt-2">{formatIDR(netWorthEquity)}</div>
-            <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium mt-1">
-              Net assets minus recurring liabilities
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatCard
+          title="Total Assets"
+          value={formatIDR(totalAssets)}
+          icon={<CircleDollarSign className="size-4 text-primary" />}
+          subtitle="Liquid, inventory & collectibles"
+        />
+        <StatCard
+          title="Cash & Bank Liquidity"
+          value={formatIDR(totalCashAndBank)}
+          valueClassName="text-emerald-500"
+          icon={<Wallet className="size-4 text-emerald-500" />}
+          subtitle={`Liquidity share ${cashPercent}%`}
+        />
+        <StatCard
+          title="Inventory Capital"
+          value={formatIDR(inventoryTotalValue)}
+          valueClassName="text-amber-500"
+          icon={<Package className="size-4 text-amber-500" />}
+          subtitle={`${totalInventoryUnits} units (${inventoryPercent}%)`}
+        />
+        <StatCard
+          title="Total Liabilities"
+          value={formatIDR(totalLiabilities)}
+          valueClassName={totalLiabilities > 0 ? 'text-rose-500' : 'text-foreground'}
+          icon={<ShieldCheck className="size-4 text-sky-500" />}
+          subtitle="Open payables & monthly subs"
+        />
       </div>
 
       {/* Asset Composition Visual Progress */}
@@ -213,7 +199,7 @@ export function BalanceSheetTab() {
             <div
               style={{ width: `${cashPercent}%` }}
               className="bg-emerald-500 hover:opacity-90 transition-all"
-              title={`Cash & Bank: ${formatIDR(totalCashAndBank)} (${cashPercent}%)`}
+              title={`Cash, Bank & Receivables: ${formatIDR(totalCashAndBank + totalReceivables)} (${cashPercent}%)`}
             />
             <div
               style={{ width: `${inventoryPercent}%` }}
@@ -230,7 +216,7 @@ export function BalanceSheetTab() {
           <div className="flex flex-wrap items-center gap-4 text-xs pt-1">
             <div className="flex items-center gap-1.5">
               <div className="size-2.5 rounded-full bg-emerald-500" />
-              <span className="text-muted-foreground">Cash & Bank ({cashPercent}%)</span>
+              <span className="text-muted-foreground">Cash &amp; Receivables ({cashPercent}%)</span>
             </div>
             <div className="flex items-center gap-1.5">
               <div className="size-2.5 rounded-full bg-amber-500" />
@@ -252,9 +238,9 @@ export function BalanceSheetTab() {
             <div className="bg-primary/5 px-4 py-3 border-b border-border/70 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Wallet className="size-4 text-primary" />
-                <h3 className="text-sm font-bold text-foreground uppercase tracking-wide">Current Liquid Assets</h3>
+                <h3 className="text-sm font-bold text-foreground uppercase tracking-wide">Current Liquid Assets &amp; Receivables</h3>
               </div>
-              <span className="text-xs font-bold text-foreground tabular-nums">{formatIDR(totalCashAndBank)}</span>
+              <span className="text-xs font-bold text-foreground tabular-nums">{formatIDR(totalCashAndBank + totalReceivables)}</span>
             </div>
             <Table>
               <TableHeader className="bg-muted/30">
@@ -275,10 +261,24 @@ export function BalanceSheetTab() {
                     <TableCell className="text-right font-semibold text-foreground tabular-nums">{formatIDR(acc.balance)}</TableCell>
                   </TableRow>
                 ))}
+                {pendingEscrowReceivables > 0 && (
+                  <TableRow className="text-xs">
+                    <TableCell className="font-medium text-foreground">Marketplace Escrow (Unsettled Sales)</TableCell>
+                    <TableCell className="text-muted-foreground">Receivable</TableCell>
+                    <TableCell className="text-right font-semibold text-amber-500 tabular-nums">{formatIDR(pendingEscrowReceivables)}</TableCell>
+                  </TableRow>
+                )}
+                {openDebtsReceivable > 0 && (
+                  <TableRow className="text-xs">
+                    <TableCell className="font-medium text-foreground">Open Receivables (Piutang)</TableCell>
+                    <TableCell className="text-muted-foreground">Receivable</TableCell>
+                    <TableCell className="text-right font-semibold text-emerald-500 tabular-nums">{formatIDR(openDebtsReceivable)}</TableCell>
+                  </TableRow>
+                )}
                 <TableRow className="bg-muted/20 font-bold text-xs">
-                  <TableCell colSpan={2}>Subtotal Cash & Bank</TableCell>
+                  <TableCell colSpan={2}>Subtotal Liquid &amp; Receivables</TableCell>
                   <TableCell className="text-right text-emerald-600 dark:text-emerald-400 tabular-nums">
-                    {formatIDR(totalCashAndBank)}
+                    {formatIDR(totalCashAndBank + totalReceivables)}
                   </TableCell>
                 </TableRow>
               </TableBody>
@@ -372,12 +372,12 @@ export function BalanceSheetTab() {
           </div>
 
           {/* TOTAL ASSETS BAR */}
-          <div className="p-4 rounded-xl border-2 border-primary/40 bg-primary/5 flex items-center justify-between">
+          <div className="p-4 rounded-2xl border border-primary/40 bg-primary/5 flex items-center justify-between gap-4">
             <div>
               <div className="text-xs uppercase tracking-wider font-bold text-primary">Total Assets Portfolio</div>
               <div className="text-[11px] text-muted-foreground">Cash + Business Inventory + Personal Assets</div>
             </div>
-            <div className="text-xl font-extrabold text-foreground tabular-nums">{formatIDR(totalAssets)}</div>
+            <div className="text-lg sm:text-xl font-bold font-mono text-foreground tabular-nums shrink-0">{formatIDR(totalAssets)}</div>
           </div>
         </div>
 
@@ -401,6 +401,17 @@ export function BalanceSheetTab() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {openPayables.map((debt) => (
+                  <TableRow key={debt.id} className="text-xs">
+                    <TableCell className="font-medium text-foreground">
+                      {debt.title} <span className="text-muted-foreground font-normal">({debt.counterparty})</span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">Payable</TableCell>
+                    <TableCell className="text-right text-rose-600 dark:text-rose-400 font-semibold tabular-nums">
+                      {formatIDR(Math.max(0, debt.totalAmount - debt.paidAmount))}
+                    </TableCell>
+                  </TableRow>
+                ))}
                 {activeSubs.length > 0 ? (
                   activeSubs.map((sub) => (
                     <TableRow key={sub.id} className="text-xs">
@@ -411,13 +422,13 @@ export function BalanceSheetTab() {
                       </TableCell>
                     </TableRow>
                   ))
-                ) : (
+                ) : openPayables.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={3} className="text-xs text-muted-foreground text-center py-4">
-                      No recurring liabilities or debt recorded.
+                      No recurring commitments or payables recorded.
                     </TableCell>
                   </TableRow>
-                )}
+                ) : null}
                 <TableRow className="bg-muted/20 font-bold text-xs">
                   <TableCell colSpan={2}>Subtotal Liabilities</TableCell>
                   <TableCell className="text-right text-rose-600 dark:text-rose-400 tabular-nums">
@@ -447,9 +458,9 @@ export function BalanceSheetTab() {
               </TableHeader>
               <TableBody>
                 <TableRow className="text-xs">
-                  <TableCell className="font-medium text-foreground">Liquid Cash & Bank Reserves</TableCell>
+                  <TableCell className="font-medium text-foreground">Liquid Cash, Bank &amp; Receivables</TableCell>
                   <TableCell className="text-right text-muted-foreground">{cashPercent}%</TableCell>
-                  <TableCell className="text-right font-semibold text-foreground tabular-nums">{formatIDR(totalCashAndBank)}</TableCell>
+                  <TableCell className="text-right font-semibold text-foreground tabular-nums">{formatIDR(totalCashAndBank + totalReceivables)}</TableCell>
                 </TableRow>
                 <TableRow className="text-xs">
                   <TableCell className="font-medium text-foreground">Capital in Merchandise Inventory</TableCell>
@@ -479,14 +490,14 @@ export function BalanceSheetTab() {
           </div>
 
           {/* TOTAL LIABILITIES + EQUITY BAR (BALANCING EQUATION) */}
-          <div className="p-4 rounded-xl border-2 border-emerald-500/40 bg-emerald-500/5 flex items-center justify-between">
+          <div className="p-4 rounded-2xl border border-emerald-500/40 bg-emerald-500/5 flex items-center justify-between gap-4">
             <div>
               <div className="text-xs uppercase tracking-wider font-bold text-emerald-600 dark:text-emerald-400">
                 Total Liabilities & Net Equity
               </div>
               <div className="text-[11px] text-muted-foreground">Liabilities + Net Equity = Balanced Equation</div>
             </div>
-            <div className="text-xl font-extrabold text-foreground tabular-nums">
+            <div className="text-lg sm:text-xl font-bold font-mono text-foreground tabular-nums shrink-0">
               {formatIDR(totalLiabilities + netWorthEquity)}
             </div>
           </div>

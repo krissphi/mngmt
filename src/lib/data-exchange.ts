@@ -1,6 +1,6 @@
 /**
  * Data export and import utilities supporting CSV and Excel (SpreadsheetML / XML).
- * Zero heavy external dependencies, pure browser-native and Excel-compatible.
+ * Includes CSV formula-injection neutralization and header auto-detection.
  */
 
 export function downloadBlob(content: string, filename: string, mimeType: string) {
@@ -15,9 +15,25 @@ export function downloadBlob(content: string, filename: string, mimeType: string
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Neutralizes spreadsheet formula injection (CWE-1236) for string cells.
+ */
+export function sanitizeCsvCell(val: string | number): string {
+  if (typeof val === 'number') {
+    return Number.isFinite(val) ? String(val) : '0';
+  }
+  const str = String(val ?? '');
+  if (/^[=+\-@\t\r]/.test(str)) {
+    return `'${str}`;
+  }
+  return str;
+}
+
 export function generateCSV(headers: string[], rows: (string | number)[][]): string {
-  // \uFEFF is UTF-8 Byte Order Mark for Excel compatibility
-  const escapeCell = (val: string | number) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+  const escapeCell = (val: string | number) => {
+    const safe = sanitizeCsvCell(val);
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
   const headerLine = headers.map(escapeCell).join(',');
   const rowLines = rows.map((r) => r.map(escapeCell).join(',')).join('\n');
   return '\uFEFF' + headerLine + '\n' + rowLines;
@@ -41,7 +57,7 @@ export function generateExcelXML(sheetName: string, headers: string[], rows: (st
         .map((cell) => {
           const isNum = typeof cell === 'number' && !isNaN(cell);
           const type = isNum ? 'Number' : 'String';
-          return `<Cell><Data ss:Type="${type}">${clean(cell)}</Data></Cell>`;
+          return `<Cell><Data ss:Type="${type}">${clean(isNum ? cell : sanitizeCsvCell(cell))}</Data></Cell>`;
         })
         .join('');
       return `<Row>${cells}</Row>`;
@@ -71,11 +87,9 @@ export function generateExcelXML(sheetName: string, headers: string[], rows: (st
 }
 
 export function parseCSV(csvText: string): { headers: string[]; rows: string[][] } {
-  // Strip BOM if present
   const text = csvText.startsWith('\uFEFF') ? csvText.slice(1) : csvText;
   if (!text.trim()) return { headers: [], rows: [] };
 
-  // Auto-detect delimiter: semicolon ';' (Indonesian/European Excel) or comma ','
   const firstLine = text.split(/\r\n|\r|\n/)[0] || '';
   const commaCount = (firstLine.match(/,/g) || []).length;
   const semicolonCount = (firstLine.match(/;/g) || []).length;
@@ -122,3 +136,11 @@ export function parseCSV(csvText: string): { headers: string[]; rows: string[][]
   return { headers, rows: dataRows };
 }
 
+export function findColumnIndex(headers: string[], candidates: string[]): number {
+  const normalized = headers.map((h) => h.trim().toLowerCase());
+  for (const candidate of candidates) {
+    const idx = normalized.findIndex((h) => h === candidate || h.includes(candidate));
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}

@@ -1,7 +1,13 @@
-const CACHE_NAME = 'mngmt-cache-v1';
+const CACHE_NAME = 'mngmt-cache-v2';
 
 const STATIC_SHELL_ASSETS = [
   '/',
+  '/finance',
+  '/collection',
+  '/seller',
+  '/ledger',
+  '/reports',
+  '/settings',
   '/manifest.webmanifest',
   '/icons/icon.svg',
   '/icons/icon-192.png',

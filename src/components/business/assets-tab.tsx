@@ -4,9 +4,11 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '@/context/store-context';
 import { Asset, AssetCondition } from '@/types';
 import { formatIDR, formatSignedIDR } from '@/lib/currency';
+import { getMainCategories, resolveCategoryPair } from '@/lib/categories';
 import { AssetCard } from '@/components/assets/asset-card';
 import { AssetFormSection } from '@/components/assets/asset-form';
 import { AssetsTable } from './assets-table';
+import { SummaryBanner } from '@/components/shared/summary-banner';
 import { TablePagination } from '@/components/shared/table-pagination';
 import {
   Gem,
@@ -47,7 +49,7 @@ type SortOption =
 type ViewMode = 'table' | 'grid';
 
 export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
-  const { assets, deleteAsset, updateProduct, categories } = useStore();
+  const { assets, deleteAsset, updateProduct, transferCollectionToSeller, categories } = useStore();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -67,17 +69,13 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
   const isFormOpen = showAddForm !== undefined ? showAddForm : internalAddOpen;
   const setFormOpen = setShowAddForm || setInternalAddOpen;
 
-  const categoryNameMap = useMemo(() => {
-    return new Map(categories.map((c) => [c.id, c.name.toLowerCase()]));
-  }, [categories]);
-
-  // Extract unique categories for filter dropdown
+  // Extract unique main categories for filter dropdown
   const availableCategories = useMemo(() => {
     const set = new Set<string>();
-    categories.filter((c) => c.type === 'product').forEach((c) => set.add(c.name));
+    getMainCategories(categories, ['product']).forEach((c) => set.add(c.name));
     assets.forEach((a) => {
-      const catName = a.categoryId ? categories.find((c) => c.id === a.categoryId)?.name : a.category;
-      if (catName) set.add(catName);
+      const resolved = resolveCategoryPair(categories, a.categoryId, a.subCategoryId, a.category || '');
+      if (resolved.mainName) set.add(resolved.mainName);
     });
     return Array.from(set).sort();
   }, [assets, categories]);
@@ -100,7 +98,8 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
     return assets
       .filter((a) => {
         const q = searchQuery.toLowerCase().trim();
-        const catName = (a.categoryId ? categoryNameMap.get(a.categoryId) : undefined) || (a.category ? a.category.toLowerCase() : '');
+        const resolved = resolveCategoryPair(categories, a.categoryId, a.subCategoryId, a.category || '');
+        const catName = resolved.fullName.toLowerCase();
         const brandStr = a.brand ? a.brand.toLowerCase() : '';
         const matchesQuery =
           !q ||
@@ -109,8 +108,7 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
           catName.includes(q) ||
           (a.notes && a.notes.toLowerCase().includes(q));
 
-        const assetCatName = (a.categoryId ? categories.find((c) => c.id === a.categoryId)?.name : undefined) || a.category || '';
-        const matchesCategory = selectedCategory === 'all' || assetCatName === selectedCategory;
+        const matchesCategory = selectedCategory === 'all' || resolved.mainName === selectedCategory;
         const matchesCondition = selectedCondition === 'all' || a.condition === selectedCondition;
 
         return matchesQuery && matchesCategory && matchesCondition;
@@ -134,7 +132,7 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
         }
         return 0;
       });
-  }, [assets, searchQuery, selectedCategory, selectedCondition, sortBy, categoryNameMap, categories]);
+  }, [assets, searchQuery, selectedCategory, selectedCondition, sortBy, categories]);
 
   // Pagination calculations
   const totalPages = Math.ceil(filteredAssets.length / pageSize) || 1;
@@ -176,10 +174,10 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
     e.preventDefault();
     if (!transferringAsset) return;
 
-    updateProduct(transferringAsset.id, {
-      productType: 'preloved',
-      sellingPrice: Number(transferPrice) || transferringAsset.sellingPrice || transferringAsset.currentEstimatedValue,
-    });
+    transferCollectionToSeller(
+      transferringAsset.id,
+      Number(transferPrice) || transferringAsset.sellingPrice || transferringAsset.currentEstimatedValue
+    );
 
     setTransferringAsset(null);
   };
@@ -200,66 +198,72 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
   const formattedPct = totalGainLoss > 0 ? `+${gainPercent}%` : `${gainPercent}%`;
 
   return (
-    <div className="space-y-4">
-      {/* Clean Tab Header with Text Summary (No Boxes) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="text-xs text-muted-foreground font-medium flex flex-wrap items-center gap-1.5">
-          <span>Estimated Assets Total: <b className="text-foreground">{formatIDR(totalEstimatedValue)}</b></span>
-          <span>(Cost: {formatIDR(totalPurchaseCost)})</span>
-          <span className="text-muted-foreground/60">•</span>
-          <span className={totalGainLoss >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-rose-600 dark:text-rose-400 font-semibold'}>
-            {formattedGainLoss} ({formattedPct})
-          </span>
-          <span className="text-muted-foreground/60">•</span>
-          <span>{assets.length} {assets.length === 1 ? 'item' : 'items'} recorded</span>
-        </div>
-
-        {/* View Switcher & Add Button */}
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          <div className="flex items-center border border-border/80 rounded-md p-0.5 bg-card">
-            <button
-              onClick={() => setViewMode('table')}
-              className={`p-1.5 rounded transition-colors ${
-                viewMode === 'table' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'
-              }`}
-              title="Table View"
-            >
-              <List className="size-3.5" />
-            </button>
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded transition-colors ${
-                viewMode === 'grid' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'
-              }`}
-              title="Grid / Card View"
-            >
-              <LayoutGrid className="size-3.5" />
-            </button>
-          </div>
-
-          <Button
-            onClick={handleOpenAdd}
-            size="sm"
-            className="text-xs h-8 gap-1.5 bg-primary text-primary-foreground font-medium shrink-0"
+    <div className="space-y-5">
+      <SummaryBanner
+        label="Total Collection Value"
+        value={formatIDR(totalEstimatedValue)}
+        meta={[
+          `${assets.length} ${assets.length === 1 ? 'Item' : 'Items'}`,
+          `Cost ${formatIDR(totalPurchaseCost)}`,
+          <span
+            key="gain"
+            className={`font-mono font-semibold ${totalGainLoss >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}
           >
-            <Plus className="size-3.5" />
-            <span>Add Asset</span>
-          </Button>
-        </div>
-      </div>
+            {formattedGainLoss} ({formattedPct})
+          </span>,
+          ...(isFiltered ? [`${filteredAssets.length} matching`] : []),
+        ]}
+        actions={
+          <>
+            <div className="inline-flex items-center border border-border/50 rounded-xl p-0.5 bg-secondary/30 backdrop-blur-xs">
+              <button
+                onClick={() => setViewMode('table')}
+                className={`p-1.5 rounded-lg transition-all ${
+                  viewMode === 'table'
+                    ? 'bg-card text-foreground shadow-xs border border-border/60'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title="Table View"
+              >
+                <List className="size-3.5" />
+              </button>
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-1.5 rounded-lg transition-all ${
+                  viewMode === 'grid'
+                    ? 'bg-card text-foreground shadow-xs border border-border/60'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title="Grid / Card View"
+              >
+                <LayoutGrid className="size-3.5" />
+              </button>
+            </div>
 
-      {/* Comprehensive Filter Toolbar */}
-      <div className="flex flex-wrap items-center gap-2 bg-muted/20 p-2.5 rounded-lg border border-border/50">
+            <Button
+              onClick={handleOpenAdd}
+              size="sm"
+              className="text-xs h-8.5 px-3 rounded-lg gap-1.5 bg-foreground text-background hover:bg-foreground/90 font-medium shrink-0 shadow-sm"
+            >
+              <Plus className="size-3.5" />
+              <span>Add Asset</span>
+            </Button>
+          </>
+        }
+      />
+
+      {/* Comprehensive Filter Toolbar (Clean & un-nested) */}
+      <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[180px] flex-1 max-w-xs">
           <Search className="size-3.5 absolute left-3 top-2.5 text-muted-foreground" />
           <Input
-            placeholder="Search asset, category, notes..."
+            placeholder="Search asset, category..."
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
               setCurrentPage(1);
             }}
-            className="pl-8 h-8 text-xs bg-card"
+            className="pl-8.5 h-8.5 text-xs bg-card/50 border-border/60 rounded-xl"
           />
         </div>
 
@@ -270,7 +274,7 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
             setSelectedCategory(e.target.value);
             setCurrentPage(1);
           }}
-          className="h-8 text-xs bg-card border border-border rounded-md px-2.5 font-medium text-foreground focus-visible:outline-none"
+          className="h-8.5 text-xs bg-card/50 border border-border/60 rounded-xl px-2.5 font-medium text-foreground focus-visible:outline-none"
         >
           <option value="all">All Categories</option>
           {availableCategories.map((c) => (
@@ -285,7 +289,7 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
             setSelectedCondition(e.target.value);
             setCurrentPage(1);
           }}
-          className="h-8 text-xs bg-card border border-border rounded-md px-2.5 font-medium text-foreground focus-visible:outline-none"
+          className="h-8.5 text-xs bg-card/50 border border-border/60 rounded-xl px-2.5 font-medium text-foreground focus-visible:outline-none"
         >
           <option value="all">All Conditions</option>
           <option value="mint">Mint</option>

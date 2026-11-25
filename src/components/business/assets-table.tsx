@@ -4,6 +4,7 @@ import React from 'react';
 import { Asset, AssetCondition } from '@/types';
 import { useStore } from '@/context/store-context';
 import { formatIDR, formatSignedIDR } from '@/lib/currency';
+import { resolveCategoryPair } from '@/lib/categories';
 import { Badge } from '@/components/ui/badge';
 import { ArrowRightLeft, Pencil, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import {
@@ -91,9 +92,9 @@ export function AssetsTable({
   };
 
   return (
-    <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
+    <div className="rounded-2xl border border-border/50 bg-card/60 backdrop-blur-xs overflow-hidden">
       <Table>
-        <TableHeader className="bg-muted/40">
+        <TableHeader className="bg-muted/30">
           <TableRow className="hover:bg-transparent border-b border-border/60">
             <TableHead className="w-10 text-center text-xs font-semibold text-muted-foreground uppercase py-3 px-2">
               #
@@ -163,7 +164,7 @@ export function AssetsTable({
               const estVal = asset.currentEstimatedValue ?? asset.sellingPrice ?? 0;
               const diff = estVal - cost;
               const pct = cost > 0 ? ((diff / cost) * 100).toFixed(0) : '0';
-              const catName = (asset.categoryId ? categories.find((c) => c.id === asset.categoryId)?.name : undefined) || asset.category || 'Product';
+              const resolvedCat = resolveCategoryPair(categories, asset.categoryId, asset.subCategoryId, asset.category || 'Collection');
 
               return (
                 <TableRow key={asset.id} className="text-xs hover:bg-muted/20 transition-colors">
@@ -176,8 +177,11 @@ export function AssetsTable({
                   </TableCell>
                   <TableCell className="py-3 px-3 whitespace-nowrap">
                     <Badge variant="outline" className="text-[10px] uppercase font-semibold h-5 px-1.5 py-0 bg-muted/60">
-                      {catName}
+                      {resolvedCat.mainName}
                     </Badge>
+                    {resolvedCat.subName && (
+                      <div className="text-[10px] text-muted-foreground mt-0.5">{resolvedCat.subName}</div>
+                    )}
                   </TableCell>
                   <TableCell className="py-3 px-3 whitespace-nowrap text-center">
                     {/* Inline Condition Dropdown */}

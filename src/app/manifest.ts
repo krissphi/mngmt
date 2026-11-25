@@ -38,26 +38,26 @@ export default function manifest(): MetadataRoute.Manifest {
       {
         name: 'Dashboard',
         short_name: 'Dashboard',
-        description: 'View overall financial and business health',
+        description: 'Financial and inventory overview',
         url: '/',
       },
       {
-        name: 'Personal Finance',
-        short_name: 'Personal',
-        description: 'Manage accounts, budgets, and savings',
-        url: '/personal',
-      },
-      {
-        name: 'Business & Inventory',
-        short_name: 'Business',
-        description: 'Manage products, stock movements, and sales',
-        url: '/business',
-      },
-      {
-        name: 'Balance Sheet',
-        short_name: 'Ledger',
-        description: 'View general ledger and balance sheet',
+        name: 'Finance',
+        short_name: 'Finance',
+        description: 'Manage pockets, transactions, and transfers',
         url: '/finance',
+      },
+      {
+        name: 'Collection',
+        short_name: 'Collection',
+        description: 'Personal collectibles and items',
+        url: '/collection',
+      },
+      {
+        name: 'Seller',
+        short_name: 'Seller',
+        description: 'Product catalog and sales management',
+        url: '/seller',
       },
     ],
   };

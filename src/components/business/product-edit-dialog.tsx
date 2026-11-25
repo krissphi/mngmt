@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useStore } from '@/context/store-context';
 import { Product } from '@/types';
+import { CategorySubSelect } from '@/components/shared/category-sub-select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -16,25 +17,30 @@ interface ProductEditDialogProps {
 }
 
 export function ProductEditDialog({ open, onOpenChange, product }: ProductEditDialogProps) {
-  const { updateProduct, deleteProduct, categories } = useStore();
-  const [prevProduct, setPrevProduct] = useState(product);
+  const { updateProduct, deleteProduct, categories, suppliers } = useStore();
+  const [prevKey, setPrevKey] = useState('');
   const [name, setName] = useState(product?.name || '');
   const [brand, setBrand] = useState(product?.brand || '');
   const [categoryId, setCategoryId] = useState(product?.categoryId || '');
+  const [subCategoryId, setSubCategoryId] = useState(product?.subCategoryId || '');
+  const [supplierId, setSupplierId] = useState(product?.supplierId || '');
   const [purchaseCost, setPurchaseCost] = useState(product ? String(product.purchaseCost) : '');
   const [sellingPrice, setSellingPrice] = useState(product ? String(product.sellingPrice) : '');
   const [minStockAlert, setMinStockAlert] = useState(product ? String(product.minStockAlert || 2) : '2');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  if (product !== prevProduct) {
-    setPrevProduct(product);
-    if (product) {
+  const syncKey = `${open}-${product?.id || ''}`;
+  if (syncKey !== prevKey) {
+    setPrevKey(syncKey);
+    if (open && product) {
       setName(product.name);
       setBrand(product.brand || '');
       setCategoryId(product.categoryId || '');
+      setSubCategoryId(product.subCategoryId || '');
+      setSupplierId(product.supplierId || '');
       setPurchaseCost(String(product.purchaseCost));
       setSellingPrice(String(product.sellingPrice));
-      setMinStockAlert(String(product.minStockAlert || 2));
+      setMinStockAlert(String(product.minStockAlert ?? 2));
     }
   }
 
@@ -46,6 +52,8 @@ export function ProductEditDialog({ open, onOpenChange, product }: ProductEditDi
       name: name.trim(),
       brand: brand.trim() || undefined,
       categoryId: categoryId || undefined,
+      subCategoryId: subCategoryId || undefined,
+      supplierId: supplierId || undefined,
       purchaseCost: Number(purchaseCost) || 0,
       sellingPrice: Number(sellingPrice) || 0,
       minStockAlert: Number(minStockAlert) || 0,
@@ -65,11 +73,11 @@ export function ProductEditDialog({ open, onOpenChange, product }: ProductEditDi
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold">Edit Product</DialogTitle>
           <DialogDescription className="text-xs">
-            Update name, brand, cost, and selling price for product ({product.sku}).
+            Update name, brand, category, cost, and selling price for product ({product.sku}).
           </DialogDescription>
         </DialogHeader>
 
@@ -83,24 +91,7 @@ export function ProductEditDialog({ open, onOpenChange, product }: ProductEditDi
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Category</label>
-              <select
-                className="w-full h-9 rounded-md border border-input bg-card px-2.5 text-xs"
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
-              >
-                <option value="">Select Category...</option>
-                {categories
-                  .filter((c) => c.type === 'product')
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Brand</label>
               <Input
@@ -109,18 +100,33 @@ export function ProductEditDialog({ open, onOpenChange, product }: ProductEditDi
                 placeholder="e.g. Bandai, Hasbro"
               />
             </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Supplier</label>
+              <select
+                className="w-full h-8.5 rounded-md border border-input bg-card px-2.5 text-xs"
+                value={supplierId}
+                onChange={(e) => setSupplierId(e.target.value)}
+              >
+                <option value="">No Supplier Linked</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Min. Stock Alert</label>
-            <Input
-              type="number"
-              value={minStockAlert}
-              onChange={(e) => setMinStockAlert(e.target.value)}
-            />
-          </div>
+          <CategorySubSelect
+            categories={categories}
+            allowedTypes={['product']}
+            categoryId={categoryId}
+            subCategoryId={subCategoryId}
+            onCategoryChange={setCategoryId}
+            onSubCategoryChange={setSubCategoryId}
+          />
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Purchase Cost (Rp)</label>
               <Input
@@ -137,6 +143,15 @@ export function ProductEditDialog({ open, onOpenChange, product }: ProductEditDi
                 value={sellingPrice}
                 onChange={(e) => setSellingPrice(e.target.value)}
                 required
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Min. Alert</label>
+              <Input
+                type="number"
+                min={0}
+                value={minStockAlert}
+                onChange={(e) => setMinStockAlert(e.target.value)}
               />
             </div>
           </div>

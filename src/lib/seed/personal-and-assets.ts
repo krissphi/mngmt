@@ -1,4 +1,4 @@
-import { Transaction, Budget, SavingsGoal, WishlistItem, Asset } from '@/types';
+import { Transaction, Budget, SavingsGoal, WishlistItem, Asset, DebtRecord } from '@/types';
 
 export const INITIAL_TRANSACTIONS: Transaction[] = [
   {
@@ -9,6 +9,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     amount: 18500000,
     accountId: 'acc-2',
     categoryId: 'cat-inc-1',
+    subCategoryId: 'sub-inc-salary',
     sourceModule: 'personal_income',
     description: 'Monthly Salary PT Tech Nusantara',
     createdAt: '2026-10-25',
@@ -20,7 +21,8 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     type: 'income',
     amount: 4500000,
     accountId: 'acc-2',
-    categoryId: 'cat-inc-2',
+    categoryId: 'cat-inc-1',
+    subCategoryId: 'sub-inc-freelance',
     sourceModule: 'personal_income',
     description: 'Freelance Mobile UI/UX Design Project Payment',
     createdAt: '2026-10-28',
@@ -33,6 +35,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     amount: 475000,
     accountId: 'acc-2',
     categoryId: 'cat-exp-2',
+    subCategoryId: 'sub-bill-internet',
     sourceModule: 'personal_expense',
     description: 'Indihome Fiber Internet 50 Mbps November 2026',
     isRecurring: true,
@@ -45,7 +48,8 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     type: 'expense',
     amount: 550000,
     accountId: 'acc-2',
-    categoryId: 'cat-exp-3',
+    categoryId: 'cat-exp-2',
+    subCategoryId: 'sub-bill-electric',
     sourceModule: 'personal_expense',
     description: 'PLN Electricity Token',
     createdAt: '2026-11-01',
@@ -58,6 +62,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     amount: 180000,
     accountId: 'acc-3',
     categoryId: 'cat-exp-1',
+    subCategoryId: 'sub-food-coffee',
     sourceModule: 'personal_expense',
     description: 'Lunch & Meeting Coffee',
     createdAt: '2026-11-02',
@@ -94,6 +99,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     amount: 350000,
     accountId: 'acc-1',
     categoryId: 'cat-biz-1',
+    subCategoryId: 'sub-biz-pack',
     sourceModule: 'business_expense',
     description: 'Restock Die-Cut Packaging Boxes 100 pcs & Fragile Tape',
     createdAt: '2026-10-30',
@@ -112,22 +118,22 @@ export const INITIAL_BUDGETS: Budget[] = [
     id: 'bgt-2',
     categoryId: 'cat-exp-2',
     month: '2026-11',
-    allocatedAmount: 600000,
-    spentAmount: 475000,
+    allocatedAmount: 1400000,
+    spentAmount: 1025000,
   },
   {
     id: 'bgt-3',
-    categoryId: 'cat-exp-3',
-    month: '2026-11',
-    allocatedAmount: 800000,
-    spentAmount: 550000,
-  },
-  {
-    id: 'bgt-4',
     categoryId: 'cat-exp-4',
     month: '2026-11',
     allocatedAmount: 1200000,
-    spentAmount: 250000,
+    spentAmount: 0,
+  },
+  {
+    id: 'bgt-4',
+    categoryId: 'cat-exp-5',
+    month: '2026-11',
+    allocatedAmount: 1500000,
+    spentAmount: 0,
   },
 ];
 
@@ -177,6 +183,23 @@ export const INITIAL_WISHLIST: WishlistItem[] = [
   },
 ];
 
+export const INITIAL_DEBTS: DebtRecord[] = [
+  {
+    id: 'dbt-1',
+    direction: 'payable',
+    title: 'Restock Invoice PO-2026-1102',
+    counterparty: 'PT Hobby Toys Indonesia',
+    totalAmount: 1100000,
+    paidAmount: 0,
+    dueDate: '2026-12-05',
+    accountId: 'acc-1',
+    status: 'open',
+    notes: 'Net-30 term for Gundam / TF restock batch',
+    createdAt: '2026-11-02',
+    updatedAt: '2026-11-02',
+  },
+];
+
 export const INITIAL_ASSETS: Asset[] = [
   {
     id: 'ast-1',
@@ -184,7 +207,8 @@ export const INITIAL_ASSETS: Asset[] = [
     name: 'Transformers Masterpiece MP-44 Convoy Optimus Prime (Original)',
     brand: 'Takara Tomy',
     categoryId: 'cat-prod-1',
-    category: 'Toys',
+    subCategoryId: 'sub-toy-tf',
+    category: 'Toys & Figures',
     purchaseDate: '2024-05-10',
     purchaseCost: 6200000,
     purchasePrice: 6200000,
@@ -209,6 +233,7 @@ export const INITIAL_ASSETS: Asset[] = [
     name: 'Nintendo Switch OLED Neon Edition + RCM',
     brand: 'Nintendo',
     categoryId: 'cat-prod-2',
+    subCategoryId: 'sub-elec-gaming',
     category: 'Electronics',
     purchaseDate: '2023-11-20',
     purchaseCost: 4300000,
@@ -233,7 +258,8 @@ export const INITIAL_ASSETS: Asset[] = [
     name: 'Vintage Bandai 1993 Megazord Daizyujin Original Chogokin',
     brand: 'Bandai',
     categoryId: 'cat-prod-1',
-    category: 'Toys',
+    subCategoryId: 'sub-toy-vintage',
+    category: 'Toys & Figures',
     purchaseDate: '2022-04-12',
     purchaseCost: 3800000,
     purchasePrice: 3800000,

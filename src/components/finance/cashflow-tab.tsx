@@ -2,7 +2,9 @@
 
 import React, { useState, useMemo } from 'react';
 import { useStore } from '@/context/store-context';
-import { formatIDR } from '@/lib/currency';
+import { formatIDR, formatSignedIDR } from '@/lib/currency';
+import { SummaryBanner } from '@/components/shared/summary-banner';
+import { StatCard } from '@/components/shared/stat-card';
 
 export function CashFlowTab() {
   const { accounts, transactions } = useStore();
@@ -19,83 +21,102 @@ export function CashFlowTab() {
     return transactions.filter((t) => t.date.startsWith(selectedMonth));
   }, [transactions, selectedMonth]);
 
-  const { totalInflow, totalOutflow } = useMemo(() => {
+  const { totalInflow, totalOutflow, inflowCount, outflowCount } = useMemo(() => {
     let inflow = 0;
     let outflow = 0;
+    let inC = 0;
+    let outC = 0;
     for (const t of filteredTransactions) {
-      if (t.type === 'income') inflow += t.amount;
-      else if (t.type === 'expense') outflow += t.amount;
+      if (t.type === 'income') {
+        inflow += t.amount;
+        inC++;
+      } else if (t.type === 'expense') {
+        outflow += t.amount;
+        outC++;
+      }
     }
-    return { totalInflow: inflow, totalOutflow: outflow };
+    return {
+      totalInflow: inflow,
+      totalOutflow: outflow,
+      inflowCount: inC,
+      outflowCount: outC,
+    };
   }, [filteredTransactions]);
 
   const netCashFlow = totalInflow - totalOutflow;
+  const totalAccountBalance = useMemo(
+    () => accounts.reduce((sum, a) => sum + a.balance, 0),
+    [accounts]
+  );
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between bg-muted/20 p-2.5 rounded-lg border border-border/50">
-        <span className="text-xs font-medium text-foreground">Filter by Period:</span>
-        <select
-          value={selectedMonth}
-          onChange={(e) => setSelectedMonth(e.target.value)}
-          className="h-8 rounded-md border border-input bg-card px-2.5 text-xs text-foreground focus-visible:outline-none"
-        >
-          <option value="all">All Time</option>
-          {availableMonths.map((m) => (
-            <option key={m} value={m}>{m}</option>
-          ))}
-        </select>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-        <div className="p-4 rounded-xl border border-border bg-card shadow-2xs">
-          <div className="text-xs font-medium text-muted-foreground">Total Cash Inflow</div>
-          <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
-            {formatIDR(totalInflow)}
-          </div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">
-            {selectedMonth === 'all' ? 'All incoming cash across accounts' : `Incoming cash in ${selectedMonth}`}
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl border border-border bg-card shadow-2xs">
-          <div className="text-xs font-medium text-muted-foreground">Total Cash Outflow</div>
-          <div className="text-2xl font-bold text-rose-600 dark:text-rose-400 mt-1">
-            {formatIDR(totalOutflow)}
-          </div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">
-            {selectedMonth === 'all' ? 'Expenses, inventory purchases, bills' : `Expenses in ${selectedMonth}`}
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl border border-border bg-card shadow-2xs">
-          <div className="text-xs font-medium text-muted-foreground">Net Cash Flow</div>
-          <div
-            className={`text-2xl font-bold mt-1 ${
-              netCashFlow >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
-            }`}
+      <SummaryBanner
+        label={`Net Cash Flow (${selectedMonth === 'all' ? 'All Time' : selectedMonth})`}
+        value={formatSignedIDR(netCashFlow)}
+        valueClassName={netCashFlow >= 0 ? 'text-emerald-500' : 'text-rose-500'}
+        meta={[
+          `${inflowCount + outflowCount} Cash Movements`,
+          `Inflow ${formatIDR(totalInflow)}`,
+          `Outflow ${formatIDR(totalOutflow)}`,
+        ]}
+        actions={
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="h-8.5 rounded-lg border border-border/60 bg-card/60 px-2.5 text-xs text-foreground focus-visible:outline-none"
+            aria-label="Filter cashflow period"
           >
-            {netCashFlow >= 0 ? '+' : ''}
-            {formatIDR(netCashFlow)}
-          </div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">Net operating liquidity surplus</div>
-        </div>
+            <option value="all">All Time</option>
+            {availableMonths.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        }
+      />
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatCard
+          title="Total Cash Inflow"
+          value={formatIDR(totalInflow)}
+          valueClassName="text-emerald-500"
+          subtitle={`${inflowCount} incoming transactions`}
+        />
+        <StatCard
+          title="Total Cash Outflow"
+          value={formatIDR(totalOutflow)}
+          valueClassName="text-rose-500"
+          subtitle={`${outflowCount} outgoing transactions`}
+        />
+        <StatCard
+          title="Current Pocket Liquidity"
+          value={formatIDR(totalAccountBalance)}
+          subtitle={`Across ${accounts.length} pockets`}
+        />
       </div>
 
-      <div className="p-5 rounded-xl border border-border bg-card shadow-2xs space-y-4">
-        <h3 className="text-sm font-semibold text-foreground">Current Account Balances</h3>
+      <div className="rounded-2xl border border-border/50 bg-card/60 backdrop-blur-xs p-5 space-y-4">
+        <div className="flex items-center justify-between border-b border-border/40 pb-3">
+          <h3 className="text-sm font-semibold text-foreground">Current Account Balances</h3>
+          <span className="text-xs font-mono text-muted-foreground tabular-nums">
+            {formatIDR(totalAccountBalance)}
+          </span>
+        </div>
         <div className="space-y-3">
           {accounts.map((acc) => {
-            const total = accounts.reduce((sum, a) => sum + a.balance, 0);
-            const percent = total > 0 ? Math.round((acc.balance / total) * 100) : 0;
+            const percent = totalAccountBalance > 0 ? Math.round((acc.balance / totalAccountBalance) * 100) : 0;
             return (
-              <div key={acc.id} className="space-y-1 text-xs">
-                <div className="flex justify-between">
-                  <span className="font-medium text-foreground">{acc.name}</span>
-                  <span className="font-semibold text-foreground">{formatIDR(acc.balance)} ({percent}%)</span>
+              <div key={acc.id} className="space-y-1.5 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-foreground truncate">{acc.name}</span>
+                  <span className="font-semibold font-mono tabular-nums text-foreground shrink-0">
+                    {formatIDR(acc.balance)} ({percent}%)
+                  </span>
                 </div>
-                <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                  <div className="bg-primary h-full rounded-full" style={{ width: `${percent}%` }} />
+                <div className="w-full bg-secondary/50 rounded-full h-2 overflow-hidden">
+                  <div className="bg-primary h-full rounded-full transition-all duration-300" style={{ width: `${percent}%` }} />
                 </div>
               </div>
             );

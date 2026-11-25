@@ -4,7 +4,9 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '@/context/store-context';
 import { Product } from '@/types';
 import { formatIDR } from '@/lib/currency';
-import { getAvailableStock } from '@/lib/calculations';
+import { getAvailableStock, isSellableProduct } from '@/lib/calculations';
+import { getMainCategories, resolveCategoryPair } from '@/lib/categories';
+import { SummaryBanner } from '@/components/shared/summary-banner';
 import { Search, Plus, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,9 +18,10 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 interface ProductsTabProps {
   onOpenAddProduct: () => void;
   onOpenAdjust: (productId: string) => void;
+  onOpenRestock: (productId: string) => void;
 }
 
-export function ProductsTab({ onOpenAddProduct, onOpenAdjust }: ProductsTabProps) {
+export function ProductsTab({ onOpenAddProduct, onOpenAdjust, onOpenRestock }: ProductsTabProps) {
   const { products, categories, deleteProduct } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -29,14 +32,17 @@ export function ProductsTab({ onOpenAddProduct, onOpenAdjust }: ProductsTabProps
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
 
-  const saleProducts = useMemo(() => {
-    return products.filter((p) => p.productType !== 'asset' && p.productType !== 'personal_collection');
-  }, [products]);
+  const saleProducts = useMemo(() => products.filter(isSellableProduct), [products]);
+  const mainProductCategories = useMemo(
+    () => getMainCategories(categories, ['product']),
+    [categories]
+  );
 
-  const { totalOnHand, totalStockSellingValue, totalStockPurchaseCost } = useMemo(() => {
+  const { totalOnHand, totalStockSellingValue, totalStockPurchaseCost, lowStockCount } = useMemo(() => {
     let units = 0;
     let sellingVal = 0;
     let purchaseCostVal = 0;
+    let lowCount = 0;
 
     for (const p of saleProducts) {
       units += p.stockOnHand;
@@ -44,12 +50,16 @@ export function ProductsTab({ onOpenAddProduct, onOpenAdjust }: ProductsTabProps
         sellingVal += p.stockOnHand * (p.sellingPrice || 0);
         purchaseCostVal += p.stockOnHand * (p.purchaseCost || 0);
       }
+      if (p.status === 'active' && p.stockOnHand <= p.minStockAlert) {
+        lowCount++;
+      }
     }
 
     return {
       totalOnHand: units,
       totalStockSellingValue: sellingVal,
       totalStockPurchaseCost: purchaseCostVal,
+      lowStockCount: lowCount,
     };
   }, [saleProducts]);
 
@@ -71,23 +81,23 @@ export function ProductsTab({ onOpenAddProduct, onOpenAdjust }: ProductsTabProps
     });
   };
 
-  const categoryNameMap = useMemo(() => {
-    return new Map(categories.map((c) => [c.id, c.name.toLowerCase()]));
-  }, [categories]);
-
   const filteredProducts = useMemo(() => {
     const q = searchQuery.toLowerCase();
     return saleProducts
       .filter((p) => {
-        const catName = p.categoryId ? categoryNameMap.get(p.categoryId) || '' : '';
-        const matchesQuery = !q || (
+        const resolved = resolveCategoryPair(categories, p.categoryId, p.subCategoryId, '');
+        const catText = resolved.fullName.toLowerCase();
+        const matchesQuery =
+          !q ||
           p.name.toLowerCase().includes(q) ||
           p.sku.toLowerCase().includes(q) ||
-          catName.includes(q) ||
-          (p.brand && p.brand.toLowerCase().includes(q))
-        );
+          catText.includes(q) ||
+          (p.brand && p.brand.toLowerCase().includes(q));
 
-        const matchesCat = selectedCategory === 'all' || p.categoryId === selectedCategory;
+        const matchesCat =
+          selectedCategory === 'all' ||
+          resolved.mainId === selectedCategory ||
+          p.categoryId === selectedCategory;
 
         let matchesStock = true;
         if (stockStatus === 'in_stock') matchesStock = p.stockOnHand > 0;
@@ -107,85 +117,81 @@ export function ProductsTab({ onOpenAddProduct, onOpenAdjust }: ProductsTabProps
         if (field === 'sold') return dir * ((a.stockSold || 0) - (b.stockSold || 0));
         return 0;
       });
-  }, [saleProducts, categoryNameMap, searchQuery, selectedCategory, stockStatus, sortState]);
+  }, [saleProducts, categories, searchQuery, selectedCategory, stockStatus, sortState]);
 
   return (
-    <div className="space-y-4">
-      {/* Clean Tab Header with Text Summary & Add Button */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-muted-foreground font-medium">
-          <span>In-Stock: <strong className="text-foreground">{totalOnHand}</strong> units</span>
-          <span>•</span>
-          <span>
-            Total Stock Value: <strong className="text-foreground font-semibold">{formatIDR(totalStockSellingValue)}</strong>
-            {totalStockPurchaseCost > 0 && (
-              <span className="text-[11px] text-muted-foreground ml-1 font-normal">
-                (Cost: {formatIDR(totalStockPurchaseCost)})
-              </span>
-            )}
-          </span>
+    <div className="space-y-5">
+      <SummaryBanner
+        label="Total Inventory Retail Value"
+        value={formatIDR(totalStockSellingValue)}
+        meta={[
+          `${saleProducts.length} ${saleProducts.length === 1 ? 'SKU' : 'SKUs'}`,
+          `${totalOnHand} Units On Hand`,
+          `${lowStockCount} Low Stock`,
+          `Cost ${formatIDR(totalStockPurchaseCost)}`,
+        ]}
+        actions={
+          <Button
+            onClick={onOpenAddProduct}
+            size="sm"
+            className="text-xs h-8.5 px-3 rounded-lg gap-1.5 bg-foreground text-background hover:bg-foreground/90 font-medium shadow-sm"
+          >
+            <Plus className="size-3.5" />
+            <span>Add Product</span>
+          </Button>
+        }
+      />
+
+      {/* Filter Toolbar */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[180px] flex-1 max-w-xs">
+          <Search className="size-3.5 absolute left-3 top-2.5 text-muted-foreground" />
+          <Input
+            placeholder="Search product, SKU, brand..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-8.5 h-8.5 text-xs bg-card/50 border-border/60 rounded-xl"
+          />
         </div>
 
-        <Button
-          onClick={onOpenAddProduct}
-          size="sm"
-          className="text-xs h-8 gap-1.5 bg-primary text-primary-foreground font-medium shrink-0 self-start sm:self-auto"
+        <select
+          value={selectedCategory}
+          onChange={(e) => setSelectedCategory(e.target.value)}
+          className="h-8.5 rounded-xl border border-border/60 bg-card/50 px-2.5 text-xs text-foreground focus-visible:outline-none"
+          aria-label="Filter by product category"
         >
-          <Plus className="size-3.5" />
-          <span>Add Product</span>
-        </Button>
-      </div>
+          <option value="all">All Categories</option>
+          {mainProductCategories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
 
-      {/* Table Filters & Toolbar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-muted/20 p-2.5 rounded-lg border border-border/50">
-        <div className="flex flex-wrap items-center gap-2 flex-1">
-          <div className="relative min-w-[180px] flex-1 max-w-xs">
-            <Search className="size-3.5 absolute left-3 top-2.5 text-muted-foreground" />
-            <Input
-              placeholder="Search product, SKU, brand..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8.5 h-8 text-xs bg-card"
-            />
-          </div>
+        <select
+          value={stockStatus}
+          onChange={(e) => setStockStatus(e.target.value as 'all' | 'in_stock' | 'low_stock' | 'out_of_stock')}
+          className="h-8.5 rounded-xl border border-border/60 bg-card/50 px-2.5 text-xs text-foreground focus-visible:outline-none"
+          aria-label="Filter by stock status"
+        >
+          <option value="all">All Stock Status</option>
+          <option value="in_stock">In Stock (&gt; 0)</option>
+          <option value="low_stock">Low Stock (Alert)</option>
+          <option value="out_of_stock">Out of Stock (0)</option>
+        </select>
 
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="h-8 rounded-md border border-input bg-card px-2.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        {isFiltered && (
+          <Button
+            onClick={resetFilters}
+            variant="ghost"
+            size="sm"
+            className="h-8.5 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1 rounded-xl"
+            title="Reset all filters"
           >
-            <option value="all">All Categories</option>
-            {categories
-              .filter((c) => c.type === 'product')
-              .map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-          </select>
-
-          <select
-            value={stockStatus}
-            onChange={(e) => setStockStatus(e.target.value as 'all' | 'in_stock' | 'low_stock' | 'out_of_stock')}
-            className="h-8 rounded-md border border-input bg-card px-2.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          >
-            <option value="all">All Stock Status</option>
-            <option value="in_stock">In Stock (&gt; 0)</option>
-            <option value="low_stock">Low Stock (Alert)</option>
-            <option value="out_of_stock">Out of Stock (0)</option>
-          </select>
-
-          {isFiltered && (
-            <Button
-              onClick={resetFilters}
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
-              title="Reset all filters"
-            >
-              <RotateCcw className="size-3" />
-              <span>Reset</span>
-            </Button>
-          )}
-        </div>
+            <RotateCcw className="size-3" />
+            <span>Reset</span>
+          </Button>
+        )}
       </div>
 
       {filteredProducts.length === 0 ? (
@@ -208,6 +214,7 @@ export function ProductsTab({ onOpenAddProduct, onOpenAdjust }: ProductsTabProps
           categories={categories}
           sortState={sortState}
           onSort={handleSort}
+          onOpenRestock={onOpenRestock}
           onOpenAdjust={onOpenAdjust}
           onEdit={(p) => {
             setEditingProduct(p);

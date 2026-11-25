@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { formatIDR, formatCompactIDR } from '@/lib/currency';
+import { resolveCategoryPair } from '@/lib/categories';
 import { Transaction, Account, Category } from '@/types';
 import { PieChart as PieIcon, Wallet } from 'lucide-react';
 
@@ -28,31 +28,30 @@ export function DonutDistributionCharts({
   accounts,
   categories,
 }: DonutDistributionChartsProps) {
-  // 1. Expense Distribution Data
+  // 1. Expense Distribution Data (Grouped cleanly by Main Category)
   const expenseData = useMemo(() => {
     const expenseTrx = transactions.filter((t) => t.type === 'expense');
     const total = expenseTrx.reduce((acc, t) => acc + t.amount, 0);
 
     if (total === 0) return { items: [], total: 0 };
 
-    const map = new Map<string, number>();
+    const map = new Map<string, { name: string; color?: string; value: number }>();
     for (const t of expenseTrx) {
-      const catId = t.categoryId || 'uncategorized';
-      const current = map.get(catId) || 0;
-      map.set(catId, current + t.amount);
+      const resolved = resolveCategoryPair(categories, t.categoryId, t.subCategoryId, 'Other');
+      const key = resolved.mainId || 'uncategorized';
+      const current = map.get(key) || { name: resolved.mainName, color: resolved.main?.color, value: 0 };
+      current.value += t.amount;
+      map.set(key, current);
     }
 
     const sorted = Array.from(map.entries())
-      .map(([catId, amount]) => {
-        const cat = catId !== 'uncategorized' ? categories.find((c) => c.id === catId) : undefined;
-        return {
-          id: catId,
-          name: cat ? cat.name : 'Other',
-          color: cat?.color,
-          value: amount,
-          percentage: (amount / total) * 100,
-        };
-      })
+      .map(([catId, info]) => ({
+        id: catId,
+        name: info.name,
+        color: info.color,
+        value: info.value,
+        percentage: (info.value / total) * 100,
+      }))
       .sort((a, b) => b.value - a.value);
 
     if (sorted.length > 5) {
@@ -121,19 +120,19 @@ export function DonutDistributionCharts({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Chart 1: Expense Distribution */}
-      <Card className="border-border/60 bg-card">
-        <CardHeader className="py-4 px-5 border-b border-border/60 flex flex-row items-center justify-between">
+      <div className="rounded-2xl border border-border/50 bg-card/60 backdrop-blur-xs p-5 space-y-4">
+        <div className="flex items-center justify-between border-b border-border/40 pb-3">
           <div className="flex items-center gap-2">
-            <PieIcon className="size-4 text-rose-500" />
-            <CardTitle className="text-sm font-semibold text-foreground">
+            <PieIcon className="size-4 text-rose-400" />
+            <span className="text-sm font-semibold text-foreground">
               Expense Distribution
-            </CardTitle>
+            </span>
           </div>
-          <span className="text-xs font-medium text-muted-foreground">
+          <span className="text-xs font-mono font-medium text-muted-foreground">
             Total: {formatCompactIDR(expenseData.total)}
           </span>
-        </CardHeader>
-        <CardContent className="p-5">
+        </div>
+        <div>
           {expenseData.items.length === 0 ? (
             <div className="h-48 flex items-center justify-center text-xs text-muted-foreground">
               No expense data recorded in this period.
@@ -146,10 +145,11 @@ export function DonutDistributionCharts({
                     <Tooltip
                       formatter={(val: unknown) => [formatIDR(Number(val)), 'Expense']}
                       contentStyle={{
-                        backgroundColor: 'var(--card)',
+                        backgroundColor: 'var(--popover)',
                         borderColor: 'var(--border)',
-                        borderRadius: '8px',
+                        borderRadius: '12px',
                         fontSize: '11px',
+                        color: 'var(--popover-foreground)',
                       }}
                     />
                     <Pie
@@ -194,23 +194,23 @@ export function DonutDistributionCharts({
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Chart 2: Account Balance Distribution */}
-      <Card className="border-border/60 bg-card">
-        <CardHeader className="py-4 px-5 border-b border-border/60 flex flex-row items-center justify-between">
+      <div className="rounded-2xl border border-border/50 bg-card/60 backdrop-blur-xs p-5 space-y-4">
+        <div className="flex items-center justify-between border-b border-border/40 pb-3">
           <div className="flex items-center gap-2">
-            <Wallet className="size-4 text-primary" />
-            <CardTitle className="text-sm font-semibold text-foreground">
+            <Wallet className="size-4 text-sky-400" />
+            <span className="text-sm font-semibold text-foreground">
               Account Balances
-            </CardTitle>
+            </span>
           </div>
-          <span className="text-xs font-medium text-muted-foreground">
+          <span className="text-xs font-mono font-medium text-muted-foreground">
             Total: {formatCompactIDR(accountData.total)}
           </span>
-        </CardHeader>
-        <CardContent className="p-5">
+        </div>
+        <div>
           {accountData.items.length === 0 ? (
             <div className="h-48 flex items-center justify-center text-xs text-muted-foreground">
               No active account balances found.
@@ -223,10 +223,11 @@ export function DonutDistributionCharts({
                     <Tooltip
                       formatter={(val: unknown) => [formatIDR(Number(val)), 'Balance']}
                       contentStyle={{
-                        backgroundColor: 'var(--card)',
+                        backgroundColor: 'var(--popover)',
                         borderColor: 'var(--border)',
-                        borderRadius: '8px',
+                        borderRadius: '12px',
                         fontSize: '11px',
+                        color: 'var(--popover-foreground)',
                       }}
                     />
                     <Pie
@@ -271,8 +272,8 @@ export function DonutDistributionCharts({
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

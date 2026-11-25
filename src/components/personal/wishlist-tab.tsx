@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '@/context/store-context';
 import { WishlistItem } from '@/types';
 import { formatIDR } from '@/lib/currency';
+import { SummaryBanner } from '@/components/shared/summary-banner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -40,7 +41,6 @@ export function WishlistTab({ showAddDialog, setShowAddDialog }: WishlistTabProp
   const isAddOpen = showAddDialog !== undefined ? showAddDialog : internalAddOpen;
   const setAddOpen = setShowAddDialog || setInternalAddOpen;
 
-  // Filtered items
   const filteredItems = useMemo(() => {
     return wishlist
       .filter((item) => {
@@ -62,14 +62,15 @@ export function WishlistTab({ showAddDialog, setShowAddDialog }: WishlistTabProp
       });
   }, [wishlist, searchQuery, statusFilter]);
 
-  // Overall metric totals
-  const { plannedCost, purchasedCount, plannedCount } = useMemo(() => {
+  const { plannedCost, purchasedCost, purchasedCount, plannedCount } = useMemo(() => {
     let planned = 0;
+    let purchasedSum = 0;
     let purchased = 0;
     let unpurchased = 0;
 
     for (const item of wishlist) {
       if (item.isPurchased) {
+        purchasedSum += item.estimatedPrice;
         purchased++;
       } else {
         planned += item.estimatedPrice;
@@ -79,6 +80,7 @@ export function WishlistTab({ showAddDialog, setShowAddDialog }: WishlistTabProp
 
     return {
       plannedCost: planned,
+      purchasedCost: purchasedSum,
       purchasedCount: purchased,
       plannedCount: unpurchased,
     };
@@ -97,54 +99,59 @@ export function WishlistTab({ showAddDialog, setShowAddDialog }: WishlistTabProp
   };
 
   return (
-    <div className="space-y-4">
-      {/* Standard Tab Toolbar with Text Summary */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="text-xs text-muted-foreground font-medium">
-          Estimated Wishlist Total: <b className="text-foreground">{formatIDR(plannedCost)}</b> ({plannedCount} planned, {purchasedCount} purchased)
-        </div>
-
-        <Button
-          onClick={() => {
-            setEditingItem(null);
-            setAddOpen(true);
-          }}
-          size="sm"
-          className="text-xs h-8 gap-1.5 self-start sm:self-auto bg-primary text-primary-foreground font-medium shrink-0"
-        >
-          <Plus className="size-3.5" />
-          <span>Add Item</span>
-        </Button>
-      </div>
+    <div className="space-y-6">
+      <SummaryBanner
+        label="Planned Wishlist Total"
+        value={formatIDR(plannedCost)}
+        meta={[
+          `${wishlist.length} ${wishlist.length === 1 ? 'Item' : 'Items'}`,
+          `${plannedCount} Planned`,
+          `${purchasedCount} Purchased`,
+          ...(purchasedCost > 0 ? [`Acquired ${formatIDR(purchasedCost)}`] : []),
+        ]}
+        actions={
+          <Button
+            onClick={() => {
+              setEditingItem(null);
+              setAddOpen(true);
+            }}
+            size="sm"
+            className="text-xs h-8.5 gap-1.5 bg-foreground text-background hover:bg-foreground/90 font-medium rounded-lg shadow-sm"
+          >
+            <Plus className="size-3.5" />
+            <span>Add Item</span>
+          </Button>
+        }
+      />
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div className="relative max-w-xs w-full">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div className="relative max-w-sm w-full">
           <Search className="size-3.5 absolute left-3 top-2.5 text-muted-foreground" />
           <Input
-            placeholder="Search wishlist..."
+            placeholder="Search wishlist items..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-8.5 h-8 text-xs"
+            className="pl-8.5 h-8.5 text-xs bg-card/50 border-border/60 rounded-xl"
           />
         </div>
 
-        <div className="flex items-center gap-1 border border-border/60 rounded-md p-0.5 bg-muted/20 self-start sm:self-auto">
+        <div className="inline-flex p-0.5 bg-secondary/40 backdrop-blur-xs rounded-xl border border-border/40 gap-0.5 self-start sm:self-auto">
           <button
             onClick={() => setStatusFilter('all')}
-            className={`px-2.5 py-1 text-xs rounded transition-colors ${
+            className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-all ${
               statusFilter === 'all'
-                ? 'bg-card text-foreground font-medium shadow-xs'
+                ? 'bg-card text-foreground font-semibold shadow-xs border border-border/60'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            All
+            All ({wishlist.length})
           </button>
           <button
             onClick={() => setStatusFilter('planned')}
-            className={`px-2.5 py-1 text-xs rounded transition-colors ${
+            className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-all ${
               statusFilter === 'planned'
-                ? 'bg-card text-foreground font-medium shadow-xs'
+                ? 'bg-card text-foreground font-semibold shadow-xs border border-border/60'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -152,9 +159,9 @@ export function WishlistTab({ showAddDialog, setShowAddDialog }: WishlistTabProp
           </button>
           <button
             onClick={() => setStatusFilter('purchased')}
-            className={`px-2.5 py-1 text-xs rounded transition-colors ${
+            className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-all ${
               statusFilter === 'purchased'
-                ? 'bg-card text-foreground font-medium shadow-xs'
+                ? 'bg-card text-foreground font-semibold shadow-xs border border-border/60'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -163,7 +170,7 @@ export function WishlistTab({ showAddDialog, setShowAddDialog }: WishlistTabProp
         </div>
       </div>
 
-      {/* Items Grid */}
+      {/* Modern Wishlist Grid */}
       {filteredItems.length === 0 ? (
         searchQuery || statusFilter !== 'all' ? (
           <NoSearchResultState
@@ -186,83 +193,107 @@ export function WishlistTab({ showAddDialog, setShowAddDialog }: WishlistTabProp
           />
         )
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredItems.map((item) => (
             <div
               key={item.id}
-              className={`p-3.5 rounded-xl border bg-card transition-all flex flex-col justify-between space-y-2.5 ${
+              className={`group rounded-2xl border backdrop-blur-xs p-5 transition-all duration-200 flex flex-col justify-between space-y-4 ${
                 item.isPurchased
-                  ? 'border-emerald-500/30 bg-emerald-500/5'
-                  : 'border-border/60 hover:border-border'
+                  ? 'border-emerald-500/30 bg-emerald-500/[0.04] hover:border-emerald-500/50'
+                  : 'border-border/50 bg-card/60 hover:border-border/90 hover:bg-card/90'
               }`}
             >
-              <div className="space-y-1">
-                <div className="flex items-center justify-between gap-2">
-                  <h4
-                    className={`font-semibold text-sm leading-snug line-clamp-1 ${
-                      item.isPurchased ? 'line-through text-muted-foreground' : 'text-foreground'
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className={`size-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                      item.isPurchased
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
+                        : 'bg-amber-500/10 border-amber-500/20 text-amber-500'
                     }`}
                   >
-                    {item.name}
-                  </h4>
-                  {item.isPurchased ? (
-                    <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 text-[11px] font-semibold shrink-0">
-                      <CheckCircle2 className="size-3.5" /> Purchased
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground text-[11px] shrink-0">
-                      Planned
-                    </span>
-                  )}
+                    {item.isPurchased ? (
+                      <CheckCircle2 className="size-4.5" />
+                    ) : (
+                      <Sparkles className="size-4.5" />
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <h4
+                      className={`font-semibold text-sm leading-snug break-words ${
+                        item.isPurchased ? 'line-through text-muted-foreground' : 'text-foreground'
+                      }`}
+                    >
+                      {item.name}
+                    </h4>
+                    <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1.5">
+                      <span className={item.isPurchased ? 'text-emerald-500 font-medium' : ''}>
+                        {item.isPurchased ? 'Purchased' : 'Planned'}
+                      </span>
+                      {item.targetDate && (
+                        <>
+                          <span>•</span>
+                          <span className="font-mono inline-flex items-center gap-1">
+                            <Calendar className="size-3" />
+                            {item.targetDate}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex items-baseline justify-between pt-0.5">
-                  <span className="font-bold text-base text-foreground tabular-nums">
-                    {formatIDR(item.estimatedPrice)}
-                  </span>
-                  {item.targetDate && (
-                    <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                      <Calendar className="size-3 text-muted-foreground" />
-                      {item.targetDate}
-                    </span>
-                  )}
+                <div className="flex items-center gap-1 shrink-0 opacity-75 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => setEditingItem(item)}
+                    className="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-accent/60 transition-colors"
+                    title="Edit item"
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setDeletingItem(item)}
+                    className="p-1.5 text-muted-foreground hover:text-rose-500 rounded-md hover:bg-accent/60 transition-colors"
+                    title="Delete item"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-border/40 flex items-center justify-between gap-1.5">
-                <Button
-                  size="sm"
-                  variant={item.isPurchased ? 'outline' : 'secondary'}
+              {/* Estimated Price */}
+              <div>
+                <span className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium block">
+                  Estimated Price
+                </span>
+                <div className="text-lg sm:text-xl font-bold tracking-tight text-foreground font-mono tabular-nums mt-0.5">
+                  {formatIDR(item.estimatedPrice)}
+                </div>
+              </div>
+
+              {/* Clean Footer */}
+              <div className="flex items-center justify-between pt-3 border-t border-border/40 text-xs">
+                <button
                   onClick={() => handleTogglePurchased(item)}
-                  className="h-7 text-xs px-2.5 gap-1.5 flex-1 font-medium"
+                  className={`flex items-center gap-1.5 font-medium py-0.5 transition-colors ${
+                    item.isPurchased
+                      ? 'text-muted-foreground hover:text-foreground'
+                      : 'text-emerald-500 hover:text-emerald-400'
+                  }`}
                 >
                   {item.isPurchased ? (
                     <>
-                      <Circle className="size-3" />
-                      <span>Mark as Planned</span>
+                      <Circle className="size-3.5" />
+                      <span>Move to Planned</span>
                     </>
                   ) : (
                     <>
-                      <CheckCircle2 className="size-3 text-emerald-600 dark:text-emerald-400" />
-                      <span>Mark as Purchased</span>
+                      <CheckCircle2 className="size-3.5" />
+                      <span>Mark Purchased</span>
                     </>
                   )}
-                </Button>
-
-                <button
-                  onClick={() => setEditingItem(item)}
-                  className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors"
-                  title="Edit item"
-                >
-                  <Pencil className="size-3.5" />
-                </button>
-
-                <button
-                  onClick={() => setDeletingItem(item)}
-                  className="p-1.5 text-muted-foreground hover:text-destructive rounded transition-colors"
-                  title="Delete item"
-                >
-                  <Trash2 className="size-3.5" />
                 </button>
               </div>
             </div>
@@ -270,7 +301,6 @@ export function WishlistTab({ showAddDialog, setShowAddDialog }: WishlistTabProp
         </div>
       )}
 
-      {/* Modal Add / Edit */}
       <WishlistDialog
         open={isAddOpen || !!editingItem}
         onOpenChange={(v) => {
@@ -282,7 +312,6 @@ export function WishlistTab({ showAddDialog, setShowAddDialog }: WishlistTabProp
         initialItem={editingItem}
       />
 
-      {/* Delete Confirmation */}
       <ConfirmDialog
         open={!!deletingItem}
         onOpenChange={(open) => !open && setDeletingItem(null)}

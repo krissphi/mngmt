@@ -2,35 +2,70 @@
 
 import React, { useState } from 'react';
 import { useStore } from '@/context/store-context';
+import { resolveCategoryPair } from '@/lib/categories';
+import { getLocalDateString } from '@/lib/date';
 import { Download, FileSpreadsheet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { generateCSV, generateExcelXML, downloadBlob } from '@/lib/data-exchange';
 
 export function DataExportCard() {
-  const { transactions, products, sales } = useStore();
+  const { transactions, products, sales, categories, accounts } = useStore();
   const [dataset, setDataset] = useState<'transactions' | 'products' | 'sales'>('transactions');
   const [format, setFormat] = useState<'csv' | 'xlsx'>('csv');
 
   const handleExport = () => {
     let headers: string[] = [];
     let rows: (string | number)[][] = [];
-    const baseFilename = `mngmt_${dataset}_${new Date().toISOString().split('T')[0]}`;
+    const baseFilename = `mngmt_${dataset}_${getLocalDateString()}`;
+    const accountMap = new Map(accounts.map((a) => [a.id, a.name]));
 
     if (dataset === 'transactions') {
-      headers = ['ID', 'Date', 'Scope', 'Type', 'Category', 'Account', 'Description', 'Amount'];
-      rows = transactions.map((t) => [
-        t.id, t.date, t.scope, t.type, t.sourceModule, t.accountId, t.description, t.amount,
-      ]);
+      headers = ['ID', 'Date', 'Scope', 'Type', 'Category', 'Sub Category', 'Account', 'Description', 'Amount'];
+      rows = transactions.map((t) => {
+        const resolved = resolveCategoryPair(categories, t.categoryId, t.subCategoryId, '');
+        return [
+          t.id,
+          t.date,
+          t.scope,
+          t.type,
+          resolved.main ? resolved.mainName : t.sourceModule,
+          resolved.subName || '',
+          accountMap.get(t.accountId) || t.accountId,
+          t.description,
+          t.amount,
+        ];
+      });
     } else if (dataset === 'products') {
-      headers = ['SKU', 'Name', 'Brand', 'Category', 'Purchase Cost', 'Selling Price', 'Stock On Hand', 'Stock Sold'];
-      rows = products.map((p) => [
-        p.sku, p.name, p.brand || '', p.productType, p.purchaseCost, p.sellingPrice, p.stockOnHand, p.stockSold,
-      ]);
+      headers = ['SKU', 'Name', 'Brand', 'Category', 'Sub Category', 'Type', 'Purchase Cost', 'Selling Price', 'Stock On Hand', 'Stock Sold'];
+      rows = products.map((p) => {
+        const resolved = resolveCategoryPair(categories, p.categoryId, p.subCategoryId, p.category || '');
+        return [
+          p.sku,
+          p.name,
+          p.brand || '',
+          resolved.mainName,
+          resolved.subName || '',
+          p.productType,
+          p.purchaseCost,
+          p.sellingPrice,
+          p.stockOnHand,
+          p.stockSold,
+        ];
+      });
     } else if (dataset === 'sales') {
-      headers = ['Order #', 'Date', 'Channel', 'Customer', 'Gross Sales', 'COGS', 'Fee', 'Net Profit', 'Status'];
+      headers = ['Order #', 'Date', 'Channel', 'Customer', 'Gross Sales', 'COGS', 'Fee', 'Net Profit', 'Payment Status', 'Order Status'];
       rows = sales.map((s) => [
-        s.orderNumber, s.saleDate, s.channel, s.customerName || '', s.grossSales, s.cogsTotal, s.marketplaceFees, s.netProfit, s.orderStatus,
+        s.orderNumber,
+        s.saleDate,
+        s.channel,
+        s.customerName || '',
+        s.grossSales,
+        s.cogsTotal,
+        s.marketplaceFees,
+        s.netProfit,
+        s.paymentStatus,
+        s.orderStatus,
       ]);
     }
 
@@ -44,7 +79,7 @@ export function DataExportCard() {
   };
 
   return (
-    <Card className="border-border/60 bg-card p-4 space-y-3.5">
+    <Card className="rounded-2xl border-border/50 bg-card/60 backdrop-blur-xs p-5 space-y-3.5">
       <CardHeader className="p-0">
         <div className="flex items-center gap-2">
           <FileSpreadsheet className="size-4 text-primary" />
@@ -91,4 +126,3 @@ export function DataExportCard() {
     </Card>
   );
 }
-

@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { useStore } from '@/context/store-context';
 import { formatCompactIDR } from '@/lib/currency';
+import { getLocalDateString } from '@/lib/date';
+import { CategorySubSelect } from '@/components/shared/category-sub-select';
 import { BillingCycle, Subscription } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,32 +18,38 @@ interface SubscriptionDialogProps {
 
 export function SubscriptionDialog({ open, onOpenChange, initialSubscription }: SubscriptionDialogProps) {
   const { accounts, categories, addSubscription, updateSubscription } = useStore();
-  const [prevSubscription, setPrevSubscription] = useState(initialSubscription);
+  const [prevKey, setPrevKey] = useState('');
   const [name, setName] = useState(initialSubscription?.name || '');
   const [amount, setAmount] = useState(initialSubscription ? String(initialSubscription.amount) : '');
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(initialSubscription?.billingCycle || 'monthly');
   const [billingDay, setBillingDay] = useState(initialSubscription?.billingDay || 1);
   const [accountId, setAccountId] = useState(initialSubscription?.accountId || accounts[0]?.id || '');
   const [categoryId, setCategoryId] = useState(initialSubscription?.categoryId || '');
+  const [subCategoryId, setSubCategoryId] = useState(initialSubscription?.subCategoryId || '');
 
   const isEdit = Boolean(initialSubscription);
+  const syncKey = `${open}-${initialSubscription?.id || 'new'}`;
 
-  if (initialSubscription !== prevSubscription) {
-    setPrevSubscription(initialSubscription);
-    if (initialSubscription) {
-      setName(initialSubscription.name);
-      setAmount(String(initialSubscription.amount));
-      setBillingCycle(initialSubscription.billingCycle);
-      setBillingDay(initialSubscription.billingDay);
-      setAccountId(initialSubscription.accountId);
-      setCategoryId(initialSubscription.categoryId || '');
-    } else {
-      setName('');
-      setAmount('');
-      setBillingCycle('monthly');
-      setBillingDay(1);
-      setAccountId(accounts[0]?.id || '');
-      setCategoryId('');
+  if (syncKey !== prevKey) {
+    setPrevKey(syncKey);
+    if (open) {
+      if (initialSubscription) {
+        setName(initialSubscription.name);
+        setAmount(String(initialSubscription.amount));
+        setBillingCycle(initialSubscription.billingCycle);
+        setBillingDay(initialSubscription.billingDay);
+        setAccountId(initialSubscription.accountId);
+        setCategoryId(initialSubscription.categoryId || '');
+        setSubCategoryId(initialSubscription.subCategoryId || '');
+      } else {
+        setName('');
+        setAmount('');
+        setBillingCycle('monthly');
+        setBillingDay(1);
+        setAccountId(accounts[0]?.id || '');
+        setCategoryId('');
+        setSubCategoryId('');
+      }
     }
   }
 
@@ -58,6 +66,7 @@ export function SubscriptionDialog({ open, onOpenChange, initialSubscription }: 
         billingDay: Number(billingDay),
         accountId,
         categoryId: categoryId || undefined,
+        subCategoryId: subCategoryId || undefined,
       });
     } else {
       const today = new Date();
@@ -76,8 +85,9 @@ export function SubscriptionDialog({ open, onOpenChange, initialSubscription }: 
         billingDay: Number(billingDay),
         accountId,
         categoryId: categoryId || undefined,
+        subCategoryId: subCategoryId || undefined,
         status: 'active',
-        nextBillingDate: nextDate.toISOString().split('T')[0],
+        nextBillingDate: getLocalDateString(nextDate),
       });
     }
 
@@ -86,7 +96,7 @@ export function SubscriptionDialog({ open, onOpenChange, initialSubscription }: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold">
             {isEdit ? 'Edit Subscription' : 'Add Subscription'}
@@ -148,50 +158,29 @@ export function SubscriptionDialog({ open, onOpenChange, initialSubscription }: 
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-[11px] font-medium text-muted-foreground block mb-1">Payment Account</label>
-              <select
-                value={accountId}
-                onChange={(e) => setAccountId(e.target.value)}
-                className="w-full h-9 rounded-md border border-input bg-card px-3 py-1 text-xs"
-              >
-                {accounts.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.name} ({formatCompactIDR(acc.balance)})
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-[11px] font-medium text-muted-foreground block mb-1">Category</label>
-              <select
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
-                className="w-full h-9 rounded-md border border-input bg-card px-3 py-1 text-xs"
-              >
-                <option value="">Select Category...</option>
-                <optgroup label="Personal Expenses">
-                  {categories
-                    .filter((c) => c.type === 'personal_expense')
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                </optgroup>
-                <optgroup label="Business Expenses">
-                  {categories
-                    .filter((c) => c.type === 'business_expense')
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                </optgroup>
-              </select>
-            </div>
+          <div>
+            <label className="text-[11px] font-medium text-muted-foreground block mb-1">Payment Account</label>
+            <select
+              value={accountId}
+              onChange={(e) => setAccountId(e.target.value)}
+              className="w-full h-9 rounded-md border border-input bg-card px-3 py-1 text-xs"
+            >
+              {accounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name} ({formatCompactIDR(acc.balance)})
+                </option>
+              ))}
+            </select>
           </div>
+
+          <CategorySubSelect
+            categories={categories}
+            allowedTypes={['personal_expense', 'business_expense']}
+            categoryId={categoryId}
+            subCategoryId={subCategoryId}
+            onCategoryChange={setCategoryId}
+            onSubCategoryChange={setSubCategoryId}
+          />
 
           <DialogFooter className="pt-2">
             <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>

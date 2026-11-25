@@ -8,6 +8,7 @@ interface DashboardSummaryKpiProps {
   totalCash: number;
   personalIncome: number;
   personalExpenses: number;
+  incomeLabel?: string;
   businessRevenue: number;
   businessNetProfit: number;
   availableStockCount: number;
@@ -18,32 +19,41 @@ export function DashboardSummaryKpi({
   totalCash,
   personalIncome,
   personalExpenses,
+  incomeLabel = 'Monthly Income',
   businessRevenue,
   businessNetProfit,
   availableStockCount,
   inventoryCapitalValue,
 }: DashboardSummaryKpiProps) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
       <StatCard
-        title="Total Cash & Accounts"
+        title="Total Pocket Balance"
         value={formatIDR(totalCash)}
-        subtitle="Liquid funds across active accounts"
+        subtitle="All active liquid pockets"
       />
       <StatCard
-        title="Personal Inflows"
+        title={incomeLabel}
         value={formatIDR(personalIncome)}
-        subtitle={`Expenses: ${formatIDR(personalExpenses)}`}
+        subtitle={
+          <span>
+            Expense: <span className="text-foreground/90 font-mono">{formatIDR(personalExpenses)}</span>
+          </span>
+        }
       />
       <StatCard
-        title="Sales Revenue"
+        title="Seller Revenue"
         value={formatIDR(businessRevenue)}
-        subtitle={`Est. Net Profit: ${formatIDR(businessNetProfit)}`}
+        subtitle={
+          <span className="text-emerald-500">
+            Net Profit: <span className="font-mono">{formatIDR(businessNetProfit)}</span>
+          </span>
+        }
       />
       <StatCard
-        title="Ready-to-Sell Stock"
+        title="Active Store Stock"
         value={`${availableStockCount} units`}
-        subtitle={`Capital Value: ${formatCompactIDR(inventoryCapitalValue)}`}
+        subtitle={`Cost Basis: ${formatCompactIDR(inventoryCapitalValue)}`}
       />
     </div>
   );

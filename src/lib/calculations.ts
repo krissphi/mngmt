@@ -1,11 +1,26 @@
-import { Product, SalesChannel } from '@/types';
+import type { Product, Sale, SalesChannel } from '@/types';
+
+/**
+ * Canonical predicate: whether a product belongs to sellable store inventory
+ * (excludes personal collectibles/assets).
+ */
+export function isSellableProduct(product: Pick<Product, 'productType'>): boolean {
+  return product.productType !== 'asset' && product.productType !== 'personal_collection';
+}
+
+/**
+ * Canonical predicate: whether a sale should count toward revenue/profit KPIs & reports.
+ */
+export function isValidSale(sale: Pick<Sale, 'orderStatus'>): boolean {
+  return sale.orderStatus !== 'cancelled' && sale.orderStatus !== 'returned';
+}
 
 /**
  * Calculates available stock according to business rules:
  * Available Stock = Stock On Hand - Stock Reserved
  */
 export function getAvailableStock(product: Pick<Product, 'stockOnHand' | 'stockReserved'>): number {
-  return Math.max(0, product.stockOnHand - product.stockReserved);
+  return Math.max(0, product.stockOnHand - (product.stockReserved || 0));
 }
 
 /**
@@ -122,10 +137,10 @@ export function calculateWeightedAverageCost(
   incomingQuantity: number,
   incomingUnitCost: number
 ): number {
-  const totalStock = currentStock + incomingQuantity;
+  const safeCurrentStock = Math.max(0, currentStock);
+  const totalStock = safeCurrentStock + incomingQuantity;
   if (totalStock <= 0) return incomingUnitCost;
-  const currentTotalVal = currentStock * currentUnitCost;
+  const currentTotalVal = safeCurrentStock * currentUnitCost;
   const incomingTotalVal = incomingQuantity * incomingUnitCost;
   return Math.round((currentTotalVal + incomingTotalVal) / totalStock);
 }
-

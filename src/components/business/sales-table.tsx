@@ -4,7 +4,7 @@ import React from 'react';
 import { Sale } from '@/types';
 import { formatIDR } from '@/lib/currency';
 import { Badge } from '@/components/ui/badge';
-import { Trash2, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Trash2, ArrowUp, ArrowDown, ArrowUpDown, Wallet } from 'lucide-react';
 import {
   Table,
   TableHeader,
@@ -29,6 +29,7 @@ interface SalesTableProps {
   sortState?: SaleSortState;
   onSort?: (field: SaleSortField) => void;
   onStatusChange: (id: string, newStatus: Sale['orderStatus']) => void;
+  onSettleSale?: (sale: Sale) => void;
   onDeleteSale?: (sale: Sale) => void;
 }
 
@@ -40,6 +41,7 @@ export function SalesTable({
   sortState,
   onSort,
   onStatusChange,
+  onSettleSale,
   onDeleteSale,
 }: SalesTableProps) {
   const renderSortIcon = (field: SaleSortField) => {
@@ -55,9 +57,9 @@ export function SalesTable({
   };
 
   return (
-    <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
+    <div className="rounded-2xl border border-border/50 bg-card/60 backdrop-blur-xs overflow-hidden">
       <Table>
-        <TableHeader className="bg-muted/40">
+        <TableHeader className="bg-muted/30">
           <TableRow className="hover:bg-transparent border-b border-border/60">
             <TableHead className="w-10 text-center text-xs font-semibold text-muted-foreground uppercase py-3 px-2">
               #
@@ -171,7 +173,16 @@ export function SalesTable({
                     )}
                   </TableCell>
                   <TableCell className="text-right font-medium text-foreground whitespace-nowrap tabular-nums py-3 px-4">
-                    {formatIDR(s.grossSales)}
+                    <div>{formatIDR(s.grossSales)}</div>
+                    <div className="mt-0.5">
+                      {s.paymentStatus === 'paid' ? (
+                        <span className="text-[10px] text-emerald-500 font-medium">Paid</span>
+                      ) : s.orderStatus !== 'cancelled' && s.orderStatus !== 'returned' ? (
+                        <span className="text-[10px] text-amber-500 font-semibold">Pending Escrow</span>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">Unpaid</span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-right font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap tabular-nums py-3 px-4">
                     {formatIDR(s.netProfit)}
@@ -191,15 +202,31 @@ export function SalesTable({
                       <option value="returned">Returned</option>
                     </select>
                   </TableCell>
-                  {onDeleteSale && (
+                  {(onDeleteSale || onSettleSale) && (
                     <TableCell className="text-center whitespace-nowrap py-3 px-2">
-                      <button
-                        onClick={() => onDeleteSale(s)}
-                        className="p-1.5 text-muted-foreground hover:text-destructive rounded transition-colors"
-                        title="Delete sale order"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
+                      <div className="inline-flex items-center gap-1">
+                        {onSettleSale &&
+                          s.paymentStatus !== 'paid' &&
+                          s.orderStatus !== 'cancelled' &&
+                          s.orderStatus !== 'returned' && (
+                            <button
+                              onClick={() => onSettleSale(s)}
+                              className="p-1.5 text-amber-500 hover:text-emerald-500 rounded transition-colors"
+                              title="Settle Escrow / Mark Paid"
+                            >
+                              <Wallet className="size-3.5" />
+                            </button>
+                          )}
+                        {onDeleteSale && (
+                          <button
+                            onClick={() => onDeleteSale(s)}
+                            className="p-1.5 text-muted-foreground hover:text-destructive rounded transition-colors"
+                            title="Delete sale order"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </TableCell>
                   )}
                 </TableRow>

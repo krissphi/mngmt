@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { useStore } from '@/context/store-context';
 import { formatCompactIDR } from '@/lib/currency';
+import { getMainCategories } from '@/lib/categories';
+import { CategorySubSelect } from '@/components/shared/category-sub-select';
 import { AssetCondition, Asset } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,36 +26,39 @@ export function AssetFormSection({
   embedded = false,
 }: AssetFormSectionProps) {
   const { addAsset, updateAsset, accounts, categories } = useStore();
-  const [prevData, setPrevData] = useState(initialData);
+  const [prevKey, setPrevKey] = useState('');
   const [name, setName] = useState(initialData?.name || '');
   const [brand, setBrand] = useState(initialData?.brand || '');
   const [categoryId, setCategoryId] = useState(initialData?.categoryId || '');
-  const [category, setCategory] = useState(initialData?.category || 'Toys');
+  const [subCategoryId, setSubCategoryId] = useState(initialData?.subCategoryId || '');
   const [purchasePrice, setPurchasePrice] = useState(initialData ? String(initialData.purchasePrice) : '');
   const [currentVal, setCurrentVal] = useState(initialData ? String(initialData.currentEstimatedValue) : '');
   const [condition, setCondition] = useState<AssetCondition>(initialData?.condition || 'mint');
   const [paymentAccount, setPaymentAccount] = useState('');
 
-  if (initialData !== prevData) {
-    setPrevData(initialData);
-    if (initialData) {
-      setName(initialData.name);
-      setBrand(initialData.brand || '');
-      setCategoryId(initialData.categoryId || '');
-      setCategory(initialData.category || 'Toys');
-      setPurchasePrice(String(initialData.purchasePrice));
-      setCurrentVal(String(initialData.currentEstimatedValue));
-      setCondition(initialData.condition || 'mint');
-      setPaymentAccount('');
-    } else {
-      setName('');
-      setBrand('');
-      setCategoryId(categories.find((c) => c.type === 'product')?.id || '');
-      setCategory('Toys');
-      setPurchasePrice('');
-      setCurrentVal('');
-      setCondition('mint');
-      setPaymentAccount('');
+  const syncKey = `${open}-${initialData?.id || 'new'}`;
+  if (syncKey !== prevKey) {
+    setPrevKey(syncKey);
+    if (open) {
+      if (initialData) {
+        setName(initialData.name);
+        setBrand(initialData.brand || '');
+        setCategoryId(initialData.categoryId || '');
+        setSubCategoryId(initialData.subCategoryId || '');
+        setPurchasePrice(String(initialData.purchasePrice));
+        setCurrentVal(String(initialData.currentEstimatedValue));
+        setCondition(initialData.condition || 'mint');
+        setPaymentAccount('');
+      } else {
+        setName('');
+        setBrand('');
+        setCategoryId(getMainCategories(categories, ['product'])[0]?.id || '');
+        setSubCategoryId('');
+        setPurchasePrice('');
+        setCurrentVal('');
+        setCondition('mint');
+        setPaymentAccount('');
+      }
     }
   }
 
@@ -62,7 +67,7 @@ export function AssetFormSection({
     if (!name.trim()) return;
 
     const selectedCat = categories.find((c) => c.id === categoryId);
-    const catName = selectedCat ? selectedCat.name : category;
+    const catName = selectedCat ? selectedCat.name : 'Collection';
     const cost = Number(purchasePrice) || 0;
     const estVal = Number(currentVal) || cost;
 
@@ -71,6 +76,7 @@ export function AssetFormSection({
         name: name.trim(),
         brand: brand.trim(),
         categoryId: categoryId || undefined,
+        subCategoryId: subCategoryId || undefined,
         category: catName,
         purchasePrice: cost,
         purchaseCost: cost,
@@ -79,23 +85,27 @@ export function AssetFormSection({
         condition,
       });
     } else {
-      addAsset({
-        name: name.trim(),
-        brand: brand.trim(),
-        categoryId: categoryId || undefined,
-        category: catName,
-        purchasePrice: cost,
-        purchaseCost: cost,
-        currentEstimatedValue: estVal,
-        sellingPrice: estVal,
-        condition,
-        status: 'active',
-        productType: 'asset',
-        stockOnHand: 1,
-        stockReserved: 0,
-        stockSold: 0,
-        minStockAlert: 0,
-      }, paymentAccount || undefined);
+      addAsset(
+        {
+          name: name.trim(),
+          brand: brand.trim(),
+          categoryId: categoryId || undefined,
+          subCategoryId: subCategoryId || undefined,
+          category: catName,
+          purchasePrice: cost,
+          purchaseCost: cost,
+          currentEstimatedValue: estVal,
+          sellingPrice: estVal,
+          condition,
+          status: 'active',
+          productType: 'asset',
+          stockOnHand: 1,
+          stockReserved: 0,
+          stockSold: 0,
+          minStockAlert: 0,
+        },
+        paymentAccount || undefined
+      );
     }
     if (onSuccess) {
       onSuccess(initialData ? 'Asset changes saved successfully!' : 'Personal asset registered successfully!');
@@ -127,28 +137,16 @@ export function AssetFormSection({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs font-medium text-muted-foreground block mb-1">Category</label>
-          <select
-            className="w-full h-9 rounded-md border border-input bg-card px-3 text-xs"
-            value={categoryId}
-            onChange={(e) => {
-              setCategoryId(e.target.value);
-              const catObj = categories.find((c) => c.id === e.target.value);
-              if (catObj) setCategory(catObj.name);
-            }}
-          >
-            <option value="">Select Category...</option>
-            {categories
-              .filter((c) => c.type === 'product')
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-          </select>
-        </div>
+      <CategorySubSelect
+        categories={categories}
+        allowedTypes={['product']}
+        categoryId={categoryId}
+        subCategoryId={subCategoryId}
+        onCategoryChange={setCategoryId}
+        onSubCategoryChange={setSubCategoryId}
+      />
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className="text-xs font-medium text-muted-foreground block mb-1">Physical Condition</label>
           <select
@@ -156,15 +154,12 @@ export function AssetFormSection({
             value={condition}
             onChange={(e) => setCondition(e.target.value as AssetCondition)}
           >
-            <option value="mint">Mint Condition (Collector Quality)</option>
-            <option value="good">Good Condition (Very Good)</option>
-            <option value="fair">Fair Condition (Visible Signs of Use)</option>
-            <option value="needs_repair">Needs Repair / Repaint</option>
+            <option value="mint">Mint (Collector Quality)</option>
+            <option value="good">Good (Very Good)</option>
+            <option value="fair">Fair (Signs of Use)</option>
+            <option value="needs_repair">Needs Repair</option>
           </select>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="text-xs font-medium text-muted-foreground block mb-1">Original Cost (Rp)</label>
           <Input
@@ -175,7 +170,7 @@ export function AssetFormSection({
           />
         </div>
         <div>
-          <label className="text-xs font-medium text-muted-foreground block mb-1">Current Estimated Value (Rp)</label>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Est. Value (Rp)</label>
           <Input
             type="number"
             placeholder="e.g. 2200000"
@@ -222,14 +217,14 @@ export function AssetFormSection({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold">
             {isEdit ? 'Edit Personal Asset' : 'Add Personal Asset'}
           </DialogTitle>
           <DialogDescription className="text-xs">
             {isEdit
-              ? 'Update valuation, condition, or notes for this asset.'
+              ? 'Update valuation, condition, or category for this item.'
               : 'Register hobby collections and personal gear to track net worth.'}
           </DialogDescription>
         </DialogHeader>

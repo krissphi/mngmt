@@ -1,11 +1,20 @@
-import {
+import type {
   Product,
   Sale,
   InventoryMovement,
   Account,
   Transaction,
+  OrderStatus,
 } from '@/types';
 import { addMonths, addYears, addWeeks, addDays, format, parseISO, isValid } from 'date-fns';
+import { calculateWeightedAverageCost } from '@/lib/calculations';
+
+export function generateSecureId(prefix: string): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+}
 
 export function deduplicateById<T extends { id: string }>(items: T[]): T[] {
   const seen = new Set<string>();
@@ -25,39 +34,96 @@ export function createInventoryMovement(
   type: InventoryMovement['type'],
   quantity: number,
   notes: string,
-  referenceId?: string
+  referenceId?: string,
+  previousStock = 0,
+  newStock = 0,
+  timestamp?: string
 ): InventoryMovement {
-  const salt = Math.random().toString(36).substring(2, 6);
   return {
-    id: `mov-${Date.now()}-${salt}-${productId}`,
+    id: generateSecureId('mov'),
     productId,
     type,
     quantity,
-    previousStock: 0,
-    newStock: 0,
+    previousStock,
+    newStock,
     referenceId,
     notes,
-    createdAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+    createdAt: timestamp || format(new Date(), 'yyyy-MM-dd HH:mm:ss'),
   };
+}
+
+export function isCancelledOrReturned(status: OrderStatus): boolean {
+  return status === 'cancelled' || status === 'returned';
+}
+
+export function isReservedOrderStatus(status: OrderStatus): boolean {
+  return status === 'pending' || status === 'confirmed' || status === 'processing';
+}
+
+export function isFulfilledOrderStatus(status: OrderStatus): boolean {
+  return status === 'shipped' || status === 'completed';
+}
+
+type OrderStockBucket = 'reserved' | 'fulfilled' | 'inactive';
+
+function getOrderStockBucket(status: OrderStatus): OrderStockBucket {
+  if (isReservedOrderStatus(status)) return 'reserved';
+  if (isFulfilledOrderStatus(status)) return 'fulfilled';
+  return 'inactive';
+}
+
+function aggregateSaleItemQuantities(sale: Sale): Map<string, number> {
+  const qtyByProduct = new Map<string, number>();
+  for (const item of sale.items) {
+    qtyByProduct.set(item.productId, (qtyByProduct.get(item.productId) || 0) + item.quantity);
+  }
+  return qtyByProduct;
 }
 
 export function applySaleToProducts(
   products: Product[],
   sale: Sale,
-  now: string
+  nowIso: string,
+  timestamp?: string
 ): { updatedProducts: Product[]; movements: InventoryMovement[] } {
   const movements: InventoryMovement[] = [];
+  const bucket = getOrderStockBucket(sale.orderStatus);
+  if (bucket === 'inactive') {
+    return { updatedProducts: products, movements };
+  }
+
+  const qtyByProduct = aggregateSaleItemQuantities(sale);
+  const ts = timestamp || nowIso.replace('T', ' ').substring(0, 19);
 
   const updatedProducts = products.map((prod) => {
-    const soldItem = sale.items.find((i) => i.productId === prod.id);
-    if (!soldItem) return prod;
+    const qty = qtyByProduct.get(prod.id);
+    if (!qty) return prod;
 
-    const qty = soldItem.quantity;
+    if (bucket === 'reserved') {
+      const nextReserved = (prod.stockReserved || 0) + qty;
+      movements.push({
+        id: generateSecureId('mov'),
+        productId: prod.id,
+        type: 'reserved',
+        quantity: qty,
+        previousStock: prod.stockOnHand,
+        newStock: prod.stockOnHand,
+        referenceId: sale.id,
+        notes: `Reserved for ${sale.channel.toUpperCase()} #${sale.orderNumber} (${sale.orderStatus})`,
+        createdAt: ts,
+      });
+      return {
+        ...prod,
+        stockReserved: nextReserved,
+        updatedAt: nowIso,
+      };
+    }
+
+    // Fulfilled immediately (shipped / completed)
     const prevStock = prod.stockOnHand;
     const newStock = Math.max(0, prevStock - qty);
-
     movements.push({
-      id: `mov-${Date.now()}-${Math.random().toString(36).substring(2, 6)}-${prod.id}`,
+      id: generateSecureId('mov'),
       productId: prod.id,
       type: 'sale_out',
       quantity: -qty,
@@ -65,159 +131,418 @@ export function applySaleToProducts(
       newStock,
       referenceId: sale.id,
       notes: `Sale ${sale.channel.toUpperCase()} #${sale.orderNumber}`,
-      createdAt: now.replace('T', ' ').substring(0, 19),
+      createdAt: ts,
     });
 
     return {
       ...prod,
       stockOnHand: newStock,
       stockSold: (prod.stockSold || 0) + qty,
-      updatedAt: now,
+      updatedAt: nowIso,
     };
   });
 
   return { updatedProducts, movements };
 }
 
-export function isCancelledOrReturned(status: Sale['orderStatus']): boolean {
-  return status === 'cancelled' || status === 'returned';
-}
-
 export function applySaleStatusUpdate(
   sales: Sale[],
   products: Product[],
   targetSaleIds: string[],
-  newStatus: Sale['orderStatus'],
-  now: string
-): { updatedSales: Sale[]; updatedProducts: Product[]; movements: InventoryMovement[] } {
+  newStatus: OrderStatus,
+  nowIso: string,
+  timestamp?: string
+): { updatedSales: Sale[]; updatedProducts: Product[]; movements: InventoryMovement[]; cancelledPaidSaleIds: string[] } {
   const idSet = new Set(targetSaleIds);
   const movements: InventoryMovement[] = [];
+  const cancelledPaidSaleIds: string[] = [];
+  const ts = timestamp || nowIso.replace('T', ' ').substring(0, 19);
 
-  const stockChanges: Record<string, { deltaStock: number; deltaSold: number; notes: string; saleId: string; type: InventoryMovement['type'] }[]> = {};
+  interface StockDelta {
+    deltaOnHand: number;
+    deltaReserved: number;
+    deltaSold: number;
+    movType: InventoryMovement['type'];
+    movQty: number;
+    notes: string;
+    saleId: string;
+  }
+
+  const changesByProduct = new Map<string, StockDelta[]>();
+
+  const pushDelta = (productId: string, delta: StockDelta) => {
+    const arr = changesByProduct.get(productId) || [];
+    arr.push(delta);
+    changesByProduct.set(productId, arr);
+  };
 
   const updatedSales = sales.map((sale) => {
     if (!idSet.has(sale.id)) return sale;
 
     const prevStatus = sale.orderStatus;
-    const prevInactive = isCancelledOrReturned(prevStatus);
-    const newInactive = isCancelledOrReturned(newStatus);
+    if (prevStatus === newStatus) return sale;
 
-    // Case 1: Active -> Inactive (Order Cancelled/Returned) -> Rollback stock into inventory!
-    if (!prevInactive && newInactive) {
-      sale.items.forEach((item) => {
-        if (!stockChanges[item.productId]) stockChanges[item.productId] = [];
-        stockChanges[item.productId].push({
-          deltaStock: item.quantity,
-          deltaSold: -item.quantity,
-          notes: `Order #${sale.orderNumber} ${newStatus === 'cancelled' ? 'Cancelled' : 'Returned'} - Stock restored`,
-          saleId: sale.id,
-          type: 'return_in',
-        });
+    const prevBucket = getOrderStockBucket(prevStatus);
+    const newBucket = getOrderStockBucket(newStatus);
+    const qtyByProduct = aggregateSaleItemQuantities(sale);
+
+    if (prevBucket !== newBucket) {
+      qtyByProduct.forEach((qty, productId) => {
+        if (prevBucket === 'reserved' && newBucket === 'fulfilled') {
+          pushDelta(productId, {
+            deltaOnHand: -qty,
+            deltaReserved: -qty,
+            deltaSold: qty,
+            movType: 'sale_out',
+            movQty: -qty,
+            notes: `Order #${sale.orderNumber} ${newStatus} - Stock fulfilled`,
+            saleId: sale.id,
+          });
+        } else if (prevBucket === 'fulfilled' && newBucket === 'reserved') {
+          pushDelta(productId, {
+            deltaOnHand: qty,
+            deltaReserved: qty,
+            deltaSold: -qty,
+            movType: 'reserved',
+            movQty: qty,
+            notes: `Order #${sale.orderNumber} reverted to ${newStatus} - Stock reserved`,
+            saleId: sale.id,
+          });
+        } else if (prevBucket === 'reserved' && newBucket === 'inactive') {
+          pushDelta(productId, {
+            deltaOnHand: 0,
+            deltaReserved: -qty,
+            deltaSold: 0,
+            movType: 'unreserved',
+            movQty: qty,
+            notes: `Order #${sale.orderNumber} ${newStatus} - Reservation released`,
+            saleId: sale.id,
+          });
+        } else if (prevBucket === 'fulfilled' && newBucket === 'inactive') {
+          pushDelta(productId, {
+            deltaOnHand: qty,
+            deltaReserved: 0,
+            deltaSold: -qty,
+            movType: 'return_in',
+            movQty: qty,
+            notes: `Order #${sale.orderNumber} ${newStatus === 'cancelled' ? 'Cancelled' : 'Returned'} - Stock restored`,
+            saleId: sale.id,
+          });
+        } else if (prevBucket === 'inactive' && newBucket === 'reserved') {
+          pushDelta(productId, {
+            deltaOnHand: 0,
+            deltaReserved: qty,
+            deltaSold: 0,
+            movType: 'reserved',
+            movQty: qty,
+            notes: `Order #${sale.orderNumber} reactivated (${newStatus}) - Stock reserved`,
+            saleId: sale.id,
+          });
+        } else if (prevBucket === 'inactive' && newBucket === 'fulfilled') {
+          pushDelta(productId, {
+            deltaOnHand: -qty,
+            deltaReserved: 0,
+            deltaSold: qty,
+            movType: 'sale_out',
+            movQty: -qty,
+            notes: `Order #${sale.orderNumber} reactivated (${newStatus}) - Stock deducted`,
+            saleId: sale.id,
+          });
+        }
       });
     }
-    // Case 2: Inactive -> Active (Order Reactivated) -> Re-deduct stock!
-    else if (prevInactive && !newInactive) {
-      sale.items.forEach((item) => {
-        if (!stockChanges[item.productId]) stockChanges[item.productId] = [];
-        stockChanges[item.productId].push({
-          deltaStock: -item.quantity,
-          deltaSold: item.quantity,
-          notes: `Order #${sale.orderNumber} Reactivated (${newStatus}) - Stock deducted`,
-          saleId: sale.id,
-          type: 'sale_out',
-        });
-      });
+
+    let nextPaymentStatus = sale.paymentStatus;
+    if (prevBucket !== 'inactive' && newBucket === 'inactive' && sale.paymentStatus === 'paid') {
+      cancelledPaidSaleIds.push(sale.id);
+      nextPaymentStatus = 'unpaid';
     }
 
-    return { ...sale, orderStatus: newStatus };
+    return { ...sale, orderStatus: newStatus, paymentStatus: nextPaymentStatus };
   });
 
   const updatedProducts = products.map((prod) => {
-    const changes = stockChanges[prod.id];
-    if (!changes || changes.length === 0) return prod;
+    const deltas = changesByProduct.get(prod.id);
+    if (!deltas || deltas.length === 0) return prod;
 
-    let currentStock = prod.stockOnHand;
+    let currentOnHand = prod.stockOnHand;
+    let currentReserved = prod.stockReserved || 0;
     let currentSold = prod.stockSold || 0;
 
-    changes.forEach((ch) => {
-      const prev = currentStock;
-      const next = Math.max(0, currentStock + ch.deltaStock);
-      currentSold = Math.max(0, currentSold + ch.deltaSold);
+    for (const d of deltas) {
+      const prev = currentOnHand;
+      currentOnHand = Math.max(0, currentOnHand + d.deltaOnHand);
+      currentReserved = Math.max(0, currentReserved + d.deltaReserved);
+      currentSold = Math.max(0, currentSold + d.deltaSold);
 
       movements.push({
-        id: `mov-${Date.now()}-${Math.random().toString(36).substring(2, 6)}-${prod.id}`,
+        id: generateSecureId('mov'),
         productId: prod.id,
-        type: ch.type,
-        quantity: ch.deltaStock,
+        type: d.movType,
+        quantity: d.movQty,
         previousStock: prev,
-        newStock: next,
-        referenceId: ch.saleId,
-        notes: ch.notes,
-        createdAt: now.replace('T', ' ').substring(0, 19),
+        newStock: currentOnHand,
+        referenceId: d.saleId,
+        notes: d.notes,
+        createdAt: ts,
       });
-
-      currentStock = next;
-    });
+    }
 
     return {
       ...prod,
-      stockOnHand: currentStock,
+      stockOnHand: currentOnHand,
+      stockReserved: currentReserved,
       stockSold: currentSold,
-      updatedAt: now,
+      updatedAt: nowIso,
     };
   });
 
-  return { updatedSales, updatedProducts, movements };
+  return { updatedSales, updatedProducts, movements, cancelledPaidSaleIds };
 }
 
-export const CATEGORY_MIGRATION_MAP: Record<string, string> = {
-  'Action Figures': 'Toys',
-  'Model Kits & Gunpla': 'Toys',
-  'Preloved Electronics': 'Electronics',
-  'Aksesoris & Supplies': 'Equipment',
-  'Makanan & Minuman': 'Food',
-  'Makanan': 'Food',
-  'Mainan': 'Toys',
-  'Elektronik': 'Electronics',
-  'Peralatan': 'Equipment',
-  'Internet & Seluler': 'Internet',
-  'Listrik & Utilitas': 'Utilities',
-  'Listrik': 'Utilities',
-  'Transportasi & Bensin': 'Transport',
-  'Transportasi': 'Transport',
-  'Hiburan & Hobi': 'Entertainment',
-  'Hiburan': 'Entertainment',
-  'Kebutuhan Rumah Tangga': 'Housing',
-  'Rumah': 'Housing',
-  'Packing & Bubble Wrap': 'Packaging',
-  'Pengemasan': 'Packaging',
-  'Biaya Iklan (Ads)': 'Advertising',
-  'Iklan': 'Advertising',
-  'Ongkir & Logistik': 'Logistics',
-  'Logistik': 'Logistics',
-  'Alat & Perlengkapan Toko': 'Operations',
-  'Operasional': 'Operations',
-  'Gaji Pokok': 'Salary',
-  'Gaji': 'Salary',
-  'Freelance & Side Project': 'Freelance',
-  'Komisi Afiliasi': 'Commission',
-  'Komisi': 'Commission',
-  'Dividen & Investasi': 'Investments',
-  'Investasi': 'Investments',
-  'Personal Collection': 'Collectibles',
-  'Personal Electronics': 'Electronics',
-  'Vintage Toys': 'Toys',
-  'Property & Furniture': 'Property',
-  'Properti': 'Property',
-};
+export function applySaleStatusUpdateSingle(
+  sales: Sale[],
+  products: Product[],
+  saleId: string,
+  newStatus: OrderStatus,
+  nowIso: string,
+  timestamp?: string
+): { updatedSales: Sale[]; updatedProducts: Product[]; movements: InventoryMovement[]; cancelledPaidSaleIds: string[] } {
+  return applySaleStatusUpdate(sales, products, [saleId], newStatus, nowIso, timestamp);
+}
+
+export function applyTransactionBalance(
+  accounts: Account[],
+  trx: Pick<Transaction, 'type' | 'amount' | 'accountId' | 'toAccountId'>,
+  direction: 1 | -1,
+  nowIso: string
+): Account[] {
+  return accounts.map((acc) => {
+    let delta = 0;
+    if (acc.id === trx.accountId) {
+      delta += direction * (trx.type === 'income' ? trx.amount : -trx.amount);
+    }
+    if (trx.type === 'transfer' && trx.toAccountId && acc.id === trx.toAccountId) {
+      delta += direction * trx.amount;
+    }
+    if (delta === 0) return acc;
+    return { ...acc, balance: acc.balance + delta, updatedAt: nowIso };
+  });
+}
+
+export function applyDeleteTransaction(
+  transactions: Transaction[],
+  accounts: Account[],
+  id: string,
+  nowIso: string = new Date().toISOString()
+): { updatedTransactions: Transaction[]; updatedAccounts: Account[]; deletedTransaction?: Transaction } {
+  const toDelete = transactions.find((t) => t.id === id);
+  if (!toDelete) return { updatedTransactions: transactions, updatedAccounts: accounts };
+
+  const updatedAccounts = applyTransactionBalance(accounts, toDelete, -1, nowIso);
+  const updatedTransactions = transactions.filter((t) => t.id !== id);
+  return { updatedTransactions, updatedAccounts, deletedTransaction: toDelete };
+}
+
+export function applyUpdateTransaction(
+  transactions: Transaction[],
+  accounts: Account[],
+  id: string,
+  updates: Partial<Omit<Transaction, 'id' | 'createdAt'>>,
+  nowIso: string = new Date().toISOString()
+): { updatedTransactions: Transaction[]; updatedAccounts: Account[] } {
+  const existing = transactions.find((t) => t.id === id);
+  if (!existing) return { updatedTransactions: transactions, updatedAccounts: accounts };
+
+  const updatedTrx: Transaction = { ...existing, ...updates };
+  // Revert old balance effect, then apply updated balance effect
+  const revertedAccounts = applyTransactionBalance(accounts, existing, -1, nowIso);
+  const updatedAccounts = applyTransactionBalance(revertedAccounts, updatedTrx, 1, nowIso);
+
+  const updatedTransactions = transactions.map((t) => (t.id === id ? updatedTrx : t));
+  return { updatedTransactions, updatedAccounts };
+}
+
+export function applyDeleteSale(
+  sales: Sale[],
+  products: Product[],
+  transactions: Transaction[],
+  accounts: Account[],
+  saleId: string,
+  nowIso: string,
+  timestamp?: string
+): {
+  updatedSales: Sale[];
+  updatedProducts: Product[];
+  updatedTransactions: Transaction[];
+  updatedAccounts: Account[];
+  movements: InventoryMovement[];
+} {
+  const targetSale = sales.find((s) => s.id === saleId);
+  if (!targetSale) {
+    return {
+      updatedSales: sales,
+      updatedProducts: products,
+      updatedTransactions: transactions,
+      updatedAccounts: accounts,
+      movements: [],
+    };
+  }
+
+  const ts = timestamp || nowIso.replace('T', ' ').substring(0, 19);
+  const movements: InventoryMovement[] = [];
+  const bucket = getOrderStockBucket(targetSale.orderStatus);
+  const qtyByProduct = aggregateSaleItemQuantities(targetSale);
+
+  const updatedProducts =
+    bucket === 'inactive'
+      ? products
+      : products.map((prod) => {
+          const qty = qtyByProduct.get(prod.id);
+          if (!qty) return prod;
+
+          if (bucket === 'reserved') {
+            const nextReserved = Math.max(0, (prod.stockReserved || 0) - qty);
+            movements.push({
+              id: generateSecureId('mov'),
+              productId: prod.id,
+              type: 'unreserved',
+              quantity: qty,
+              previousStock: prod.stockOnHand,
+              newStock: prod.stockOnHand,
+              referenceId: targetSale.id,
+              notes: `Unreserved deleted order #${targetSale.orderNumber}`,
+              createdAt: ts,
+            });
+            return { ...prod, stockReserved: nextReserved, updatedAt: nowIso };
+          }
+
+          const newStock = prod.stockOnHand + qty;
+          const newSold = Math.max(0, (prod.stockSold || 0) - qty);
+          movements.push({
+            id: generateSecureId('mov'),
+            productId: prod.id,
+            type: 'return_in',
+            quantity: qty,
+            previousStock: prod.stockOnHand,
+            newStock,
+            referenceId: targetSale.id,
+            notes: `Rollback deleted sale #${targetSale.orderNumber}`,
+            createdAt: ts,
+          });
+          return { ...prod, stockOnHand: newStock, stockSold: newSold, updatedAt: nowIso };
+        });
+
+  // Revert any linked business_sale transactions
+  const relatedIds = new Set(
+    transactions
+      .filter((t) => t.referenceId === saleId && t.sourceModule === 'business_sale')
+      .map((t) => t.id)
+  );
+  let nextTransactions = transactions;
+  let nextAccounts = accounts;
+  relatedIds.forEach((trxId) => {
+    const res = applyDeleteTransaction(nextTransactions, nextAccounts, trxId, nowIso);
+    nextTransactions = res.updatedTransactions;
+    nextAccounts = res.updatedAccounts;
+  });
+
+  return {
+    updatedSales: sales.filter((s) => s.id !== saleId),
+    updatedProducts,
+    updatedTransactions: nextTransactions,
+    updatedAccounts: nextAccounts,
+    movements,
+  };
+}
+
+export function applyStockPurchase(
+  products: Product[],
+  accounts: Account[],
+  transactions: Transaction[],
+  params: {
+    productId: string;
+    quantity: number;
+    unitCost: number;
+    supplierId?: string;
+    paymentAccountId?: string;
+    date: string;
+    notes?: string;
+    nowIso: string;
+    timestamp?: string;
+  }
+): {
+  updatedProducts: Product[];
+  updatedAccounts: Account[];
+  updatedTransactions: Transaction[];
+  movement?: InventoryMovement;
+} {
+  const target = products.find((p) => p.id === params.productId);
+  if (!target || params.quantity <= 0) {
+    return { updatedProducts: products, updatedAccounts: accounts, updatedTransactions: transactions };
+  }
+
+  const ts = params.timestamp || params.nowIso.replace('T', ' ').substring(0, 19);
+  const prevStock = target.stockOnHand;
+  const newStock = prevStock + params.quantity;
+  const newAvgCost = calculateWeightedAverageCost(prevStock, target.purchaseCost, params.quantity, params.unitCost);
+  const totalCost = params.quantity * params.unitCost;
+
+  const updatedProducts = products.map((p) =>
+    p.id === params.productId
+      ? {
+          ...p,
+          stockOnHand: newStock,
+          purchaseCost: newAvgCost,
+          supplierId: params.supplierId || p.supplierId,
+          updatedAt: params.nowIso,
+        }
+      : p
+  );
+
+  const movement = createInventoryMovement(
+    target.id,
+    'purchase_in',
+    params.quantity,
+    params.notes?.trim() || `Restock +${params.quantity} pcs @ ${params.unitCost}`,
+    undefined,
+    prevStock,
+    newStock,
+    ts
+  );
+
+  let updatedTransactions = transactions;
+  let updatedAccounts = accounts;
+  if (params.paymentAccountId && totalCost > 0) {
+    const trx: Transaction = {
+      id: generateSecureId('trx'),
+      date: params.date,
+      scope: 'business',
+      type: 'expense',
+      amount: totalCost,
+      accountId: params.paymentAccountId,
+      categoryId: 'cat-biz-1',
+      sourceModule: 'business_purchase',
+      referenceId: target.id,
+      description: `Restock ${target.name} (${params.quantity}x)`,
+      notes: params.notes?.trim() || undefined,
+      createdAt: params.nowIso,
+    };
+    updatedTransactions = [trx, ...transactions];
+    updatedAccounts = applyTransactionBalance(accounts, trx, 1, params.nowIso);
+  }
+
+  return {
+    updatedProducts,
+    updatedAccounts,
+    updatedTransactions,
+    movement,
+  };
+}
 
 export function cleanCategoryName(name: string): string {
-  if (CATEGORY_MIGRATION_MAP[name]) return CATEGORY_MIGRATION_MAP[name];
-  if (name.includes('&') || name.includes('/')) {
-    const firstWord = name.split(/[&/]/)[0].trim();
-    return firstWord || name;
-  }
-  return name;
+  if (!name) return 'Umum';
+  return name.trim();
 }
 
 export function advanceNextBillingDate(dateStr: string, cycle: 'monthly' | 'yearly' | 'weekly' | '28_days'): string {
@@ -246,41 +571,4 @@ export function advanceNextBillingDate(dateStr: string, cycle: 'monthly' | 'year
   } catch {
     return format(addMonths(new Date(), 1), 'yyyy-MM-dd');
   }
-}
-
-export function applyDeleteTransaction(
-  transactions: Transaction[],
-  accounts: Account[],
-  id: string
-): { updatedTransactions: Transaction[]; updatedAccounts: Account[] } {
-  const toDelete = transactions.find((t) => t.id === id);
-  if (!toDelete) return { updatedTransactions: transactions, updatedAccounts: accounts };
-
-  const rev = toDelete.type === 'income' ? -toDelete.amount : toDelete.amount;
-  const updatedAccounts = accounts.map((acc) => {
-    let balance = acc.balance;
-    let modified = false;
-    if (acc.id === toDelete.accountId) {
-      balance += rev;
-      modified = true;
-    }
-    if (toDelete.type === 'transfer' && toDelete.toAccountId && acc.id === toDelete.toAccountId) {
-      balance -= toDelete.amount;
-      modified = true;
-    }
-    return modified ? { ...acc, balance, updatedAt: new Date().toISOString() } : acc;
-  });
-
-  const updatedTransactions = transactions.filter((t) => t.id !== id);
-  return { updatedTransactions, updatedAccounts };
-}
-
-export function applySaleStatusUpdateSingle(
-  sales: Sale[],
-  products: Product[],
-  saleId: string,
-  newStatus: Sale['orderStatus'],
-  now: string
-): { updatedSales: Sale[]; updatedProducts: Product[]; movements: InventoryMovement[] } {
-  return applySaleStatusUpdate(sales, products, [saleId], newStatus, now);
 }

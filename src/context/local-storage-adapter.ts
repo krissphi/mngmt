@@ -11,6 +11,7 @@ import {
   WishlistItem,
   Asset,
   Subscription,
+  DebtRecord,
 } from '@/types';
 import { idbGet, idbSet, idbClear } from '@/lib/indexed-db';
 
@@ -30,6 +31,7 @@ export interface AppStoredState {
   wishlist: WishlistItem[];
   assets: Asset[];
   subscriptions: Subscription[];
+  debts: DebtRecord[];
 }
 
 /**
@@ -49,7 +51,6 @@ export async function loadStorageState(): Promise<Partial<AppStoredState> | null
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<AppStoredState>;
-      // Asynchronously migrate to IndexedDB
       await idbSet(IDB_APP_KEY, parsed);
       return parsed;
     }
@@ -90,21 +91,22 @@ function createLightweightMirror(state: AppStoredState): AppStoredState {
 /**
  * Persists application state to IndexedDB and mirror-saves to localStorage when within quota.
  */
-export function saveStorageState(state: AppStoredState): void {
+export async function saveStorageState(state: AppStoredState): Promise<void> {
   if (typeof window === 'undefined') return;
 
-  // 1. Primary persistence: IndexedDB (asynchronous, multi-gigabyte quota, stores full state & images)
-  idbSet(IDB_APP_KEY, state).catch((err) => {
-    console.warn('IndexedDB save warning:', err);
-  });
-
-  // 2. Mirror persistence: localStorage (lightweight fallback without heavy Base64 image payloads)
+  // 1. Mirror persistence synchronously first so it never races async IDB clear
   try {
     const lightweight = createLightweightMirror(state);
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(lightweight));
   } catch (err) {
-    // Gracefully handle browser 5MB quota errors without crashing
     console.warn('LocalStorage quota reached, state safely stored in IndexedDB:', err);
+  }
+
+  // 2. Primary persistence: IndexedDB (asynchronous, multi-gigabyte quota)
+  try {
+    await idbSet(IDB_APP_KEY, state);
+  } catch (err) {
+    console.warn('IndexedDB save warning:', err);
   }
 }
 
@@ -114,8 +116,8 @@ export function saveStorageState(state: AppStoredState): void {
 export async function clearStorageState(): Promise<void> {
   if (typeof window === 'undefined') return;
   try {
-    await idbClear();
     localStorage.removeItem(LOCAL_STORAGE_KEY);
+    await idbClear();
   } catch (err) {
     console.error('Failed to clear storage:', err);
   }

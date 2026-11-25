@@ -17,15 +17,14 @@ const emptySubscribe = () => () => {};
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const mounted = React.useSyncExternalStore(emptySubscribe, () => true, () => false);
   const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof window === 'undefined') return 'light';
+    if (typeof window === 'undefined') return 'dark';
     try {
       const stored = localStorage.getItem('arkaos_theme') as Theme | null;
       if (stored) return stored;
-      if (window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
     } catch {
       // ignore
     }
-    return 'light';
+    return 'dark';
   });
 
   useEffect(() => {

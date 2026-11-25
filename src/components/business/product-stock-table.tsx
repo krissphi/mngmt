@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { Product, Category } from '@/types';
 import { getAvailableStock } from '@/lib/calculations';
 import { formatIDR } from '@/lib/currency';
+import { resolveCategoryPair } from '@/lib/categories';
 import {
   Table,
   TableHeader,
@@ -14,7 +15,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Pencil, Trash2, SlidersHorizontal, AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Pencil, Trash2, SlidersHorizontal, PackagePlus, AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { TablePagination } from '@/components/shared/table-pagination';
 
 export type ProductSortField = 'name' | 'cost' | 'price' | 'stock' | 'available' | 'sold';
@@ -29,6 +30,7 @@ interface ProductStockTableProps {
   categories: Category[];
   sortState?: ProductSortState;
   onSort?: (field: ProductSortField) => void;
+  onOpenRestock?: (productId: string) => void;
   onOpenAdjust: (productId: string) => void;
   onEdit: (product: Product) => void;
   onDelete: (product: Product) => void;
@@ -39,6 +41,7 @@ export function ProductStockTable({
   categories,
   sortState,
   onSort,
+  onOpenRestock,
   onOpenAdjust,
   onEdit,
   onDelete,
@@ -68,9 +71,9 @@ export function ProductStockTable({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
+      <div className="rounded-2xl border border-border/50 bg-card/60 backdrop-blur-xs overflow-hidden">
         <Table>
-          <TableHeader className="bg-muted/40">
+          <TableHeader className="bg-muted/30">
             <TableRow className="hover:bg-transparent border-b border-border/60">
               <TableHead className="w-10 text-center text-xs font-semibold text-muted-foreground uppercase py-3 px-2">
                 #
@@ -86,7 +89,7 @@ export function ProductStockTable({
                 </button>
               </TableHead>
               <TableHead className="whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase py-3 px-4">
-                SKU / Cat
+                SKU / Category
               </TableHead>
               <TableHead className="text-right whitespace-nowrap text-xs font-semibold text-muted-foreground uppercase py-3 px-4">
                 <button
@@ -148,11 +151,11 @@ export function ProductStockTable({
           </TableHeader>
           <TableBody className="divide-y divide-border/60">
             {paginatedProducts.map((p, idx) => {
-              const rowNumber = (currentPage - 1) * pageSize + idx + 1;
+              const rowNumber = (safeCurrentPage - 1) * pageSize + idx + 1;
               const avail = getAvailableStock(p);
               const isLow = p.stockOnHand <= p.minStockAlert;
               const isOut = p.stockOnHand === 0;
-              const cat = categories.find((c) => c.id === p.categoryId);
+              const resolvedCat = resolveCategoryPair(categories, p.categoryId, p.subCategoryId, '');
 
               return (
                 <TableRow
@@ -168,10 +171,15 @@ export function ProductStockTable({
                   </TableCell>
                   <TableCell className="whitespace-nowrap py-3 px-4">
                     <div className="font-mono text-muted-foreground">{p.sku}</div>
-                    {cat && (
-                      <Badge variant="secondary" className="text-[10px] h-4.5 px-1.5 py-0 font-normal mt-0.5">
-                        {cat.name}
-                      </Badge>
+                    {resolvedCat.main && (
+                      <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                        <Badge variant="secondary" className="text-[10px] h-4.5 px-1.5 py-0 font-normal">
+                          {resolvedCat.mainName}
+                        </Badge>
+                        {resolvedCat.subName && (
+                          <span className="text-[10px] text-muted-foreground">/ {resolvedCat.subName}</span>
+                        )}
+                      </div>
                     )}
                   </TableCell>
                   <TableCell className="text-right text-muted-foreground tabular-nums whitespace-nowrap py-3 px-4">
@@ -212,7 +220,19 @@ export function ProductStockTable({
                     {p.stockSold}
                   </TableCell>
                   <TableCell className="text-center whitespace-nowrap py-3 px-4">
-                    <div className="inline-flex items-center gap-1.5 justify-center">
+                    <div className="inline-flex items-center gap-1 justify-center">
+                      {onOpenRestock && (
+                        <Button
+                          onClick={() => onOpenRestock(p.id)}
+                          variant="outline"
+                          size="sm"
+                          className="text-xs h-7 px-2 gap-1 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+                          title="Purchase / Restock Inventory"
+                        >
+                          <PackagePlus className="size-3" />
+                          <span>Restock</span>
+                        </Button>
+                      )}
                       <Button
                         onClick={() => onOpenAdjust(p.id)}
                         variant="outline"

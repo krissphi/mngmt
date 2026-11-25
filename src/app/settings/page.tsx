@@ -4,7 +4,32 @@ import React, { useState, useRef } from 'react';
 import { useStore } from '@/context/store-context';
 import { useTheme } from '@/components/theme-provider';
 import { usePwa } from '@/components/pwa/pwa-provider';
-import { RefreshCw, Download, Upload, CheckCircle, AlertCircle, Smartphone, Wifi, Trash2 } from 'lucide-react';
+import { getLocalDateString } from '@/lib/date';
+import {
+  ChannelFeeRates,
+  getSavedChannelFeeRates,
+  saveChannelFeeRates,
+} from '@/lib/calculations';
+import { CategoryManagerCard } from '@/components/settings/category-manager-card';
+import {
+  PIN_HASH_STORAGE_KEY,
+  PIN_UNLOCKED_SESSION_KEY,
+  hashPin,
+  useHasPin,
+  notifyPinStateChange,
+} from '@/components/shared/pin-lock-gate';
+import {
+  RefreshCw,
+  Download,
+  Upload,
+  CheckCircle,
+  AlertCircle,
+  Smartphone,
+  Wifi,
+  Trash2,
+  Percent,
+  Lock,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -13,7 +38,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 
 export default function SettingsPage() {
   const store = useStore();
-  const { resetToDemoData, deleteAllData, restoreFullBackup } = store;
+  const { resetToDemoData, deleteAllData, restoreFullBackupDetailed } = store;
   const { theme, setTheme } = useTheme();
   const { isInstallable, isInstalled, isOffline, installApp } = usePwa();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -25,6 +50,45 @@ export default function SettingsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [importStatus, setImportStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [importErrorMessage, setImportErrorMessage] = useState('');
+
+  // Marketplace fee presets
+  const [feeRates, setFeeRates] = useState<ChannelFeeRates>(() => getSavedChannelFeeRates());
+  const [feeSaved, setFeeSaved] = useState(false);
+
+  // Local PIN lock
+  const hasPin = useHasPin();
+  const [newPin, setNewPin] = useState('');
+  const [pinMsg, setPinMsg] = useState('');
+
+  const handleSaveFeeRates = (e: React.FormEvent) => {
+    e.preventDefault();
+    saveChannelFeeRates(feeRates);
+    setFeeSaved(true);
+    setTimeout(() => setFeeSaved(false), 2500);
+  };
+
+  const handleSetPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPin.trim().length < 4) {
+      setPinMsg('PIN must be at least 4 characters.');
+      return;
+    }
+    const hashed = await hashPin(newPin.trim());
+    localStorage.setItem(PIN_HASH_STORAGE_KEY, hashed);
+    sessionStorage.setItem(PIN_UNLOCKED_SESSION_KEY, 'true');
+    notifyPinStateChange();
+    setNewPin('');
+    setPinMsg('Local security PIN enabled.');
+    setTimeout(() => setPinMsg(''), 2500);
+  };
+
+  const handleRemovePin = () => {
+    localStorage.removeItem(PIN_HASH_STORAGE_KEY);
+    sessionStorage.removeItem(PIN_UNLOCKED_SESSION_KEY);
+    notifyPinStateChange();
+    setPinMsg('Security PIN removed.');
+    setTimeout(() => setPinMsg(''), 2500);
+  };
 
   const handleConfirmReset = () => {
     resetToDemoData();
@@ -54,14 +118,15 @@ export default function SettingsPage() {
       wishlist: store.wishlist,
       assets: store.assets,
       subscriptions: store.subscriptions,
+      debts: store.debts,
       exportedAt: new Date().toISOString(),
-      version: '1.0.0',
+      version: '1.1.0',
     };
     const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `mngmt_full_backup_${new Date().toISOString().split('T')[0]}.json`;
+    link.download = `mngmt_full_backup_${getLocalDateString()}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -78,14 +143,14 @@ export default function SettingsPage() {
       try {
         const content = event.target?.result as string;
         const parsed = JSON.parse(content);
-        const success = restoreFullBackup(parsed);
-        if (success) {
+        const result = restoreFullBackupDetailed(parsed);
+        if (result.ok) {
           setImportStatus('success');
           setTimeout(() => setImportStatus('idle'), 3000);
         } else {
           setImportStatus('error');
-          setImportErrorMessage('Invalid backup format. Required entity arrays not found.');
-          setTimeout(() => setImportStatus('idle'), 4000);
+          setImportErrorMessage(result.error || 'Invalid backup format.');
+          setTimeout(() => setImportStatus('idle'), 5000);
         }
       } catch {
         setImportStatus('error');
@@ -101,18 +166,64 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Settings"
-        description="Manage application preferences, system appearance, and local data backups."
+        description="Manage categories, sub-categories, marketplace fee presets, security PIN, backups, and preferences."
       />
 
       <div className="space-y-4">
-        {/* 1. Data Backup */}
+        {/* 1. Category & Sub-Category Manager */}
+        <CategoryManagerCard />
+
+        {/* 2. Marketplace Fee Rate Presets */}
         <Card className="border-border/60 bg-card">
           <CardHeader className="py-4 px-5 border-b border-border/60">
-            <CardTitle className="text-sm font-semibold text-foreground">Data Storage & 1-Click Backup (IndexedDB)</CardTitle>
+            <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Percent className="size-4 text-primary" />
+              <span>Default Marketplace Fee Rates (%)</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-5">
+            <form onSubmit={handleSaveFeeRates} className="space-y-4">
+              <p className="text-xs text-muted-foreground">
+                Customize default admin/commission rates auto-filled when recording a sale per channel.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+                {(['shopee', 'tiktok', 'tokopedia', 'direct', 'other'] as const).map((ch) => (
+                  <div key={ch}>
+                    <label className="text-muted-foreground font-medium block mb-1 uppercase">{ch} (%)</label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min={0}
+                      max={100}
+                      value={feeRates[ch]}
+                      onChange={(e) => setFeeRates((prev) => ({ ...prev, [ch]: Number(e.target.value) || 0 }))}
+                      className="h-8.5 text-xs font-mono"
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-3">
+                <Button type="submit" size="sm" variant="outline" className="text-xs h-8">
+                  Save Fee Presets
+                </Button>
+                {feeSaved && (
+                  <span className="text-xs text-emerald-500 flex items-center gap-1">
+                    <CheckCircle className="size-3.5" /> Saved
+                  </span>
+                )}
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* 3. Data Backup */}
+        <Card className="border-border/60 bg-card">
+          <CardHeader className="py-4 px-5 border-b border-border/60">
+            <CardTitle className="text-sm font-semibold text-foreground">Data Storage &amp; 1-Click Backup (IndexedDB)</CardTitle>
           </CardHeader>
           <CardContent className="p-5 space-y-4">
             <p className="text-xs text-muted-foreground">
-              All data and photos are stored locally in your browser using high-capacity IndexedDB storage. You can create a complete system snapshot JSON backup and restore it anytime without losing images or records.
+              All data and photos are stored locally in your browser using high-capacity IndexedDB storage. Restore files are schema-validated before overwriting.
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <Button onClick={handleExportBackup} size="sm" variant="outline" className="text-xs h-8">
@@ -146,13 +257,52 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* 2. Progressive Web App (PWA) */}
+        {/* 4. Local Privacy PIN Lock */}
+        <Card className="border-border/60 bg-card">
+          <CardHeader className="py-4 px-5 border-b border-border/60">
+            <CardTitle className="text-sm font-semibold text-foreground flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Lock className="size-4 text-primary" />
+                <span>Local App PIN Lock</span>
+              </div>
+              <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${hasPin ? 'bg-emerald-500/10 text-emerald-500' : 'bg-muted text-muted-foreground'}`}>
+                {hasPin ? 'Enabled' : 'Disabled'}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-5 space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Require a local PIN each time a new browser tab/session opens mngmt on this device.
+            </p>
+            <form onSubmit={handleSetPin} className="flex flex-wrap items-center gap-2">
+              <Input
+                type="password"
+                inputMode="numeric"
+                placeholder={hasPin ? 'Enter new PIN to change...' : 'Set 4+ digit PIN...'}
+                value={newPin}
+                onChange={(e) => setNewPin(e.target.value)}
+                className="max-w-xs h-8 text-xs"
+              />
+              <Button type="submit" size="sm" variant="outline" className="h-8 text-xs">
+                {hasPin ? 'Update PIN' : 'Enable PIN Lock'}
+              </Button>
+              {hasPin && (
+                <Button type="button" size="sm" variant="ghost" onClick={handleRemovePin} className="h-8 text-xs text-rose-500">
+                  Remove PIN
+                </Button>
+              )}
+            </form>
+            {pinMsg && <p className="text-xs text-emerald-500">{pinMsg}</p>}
+          </CardContent>
+        </Card>
+
+        {/* 5. Progressive Web App (PWA) */}
         <Card className="border-border/60 bg-card">
           <CardHeader className="py-4 px-5 border-b border-border/60">
             <CardTitle className="text-sm font-semibold text-foreground flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Smartphone className="size-4 text-primary" />
-                <span>Progressive Web App (PWA) & Offline Mode</span>
+                <span>Progressive Web App (PWA) &amp; Offline Mode</span>
               </div>
               <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${
                 isInstalled
@@ -165,7 +315,7 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent className="p-5 space-y-3.5">
             <p className="text-xs text-muted-foreground leading-relaxed">
-              mngmt is a fully offline-first Progressive Web Application. With its native service worker and client-side IndexedDB storage, you can run all finance tracking, inventory records, and sales management completely without an active internet connection.
+              mngmt is a fully offline-first Progressive Web Application. With its service worker and IndexedDB storage, you can run all finance tracking, inventory records, and sales management completely offline.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
@@ -201,10 +351,10 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* 2. Database Maintenance & Reset */}
+        {/* 6. Database Maintenance & Reset */}
         <Card className="border-border/60 bg-card">
           <CardHeader className="py-4 px-5 border-b border-border/60">
-            <CardTitle className="text-sm font-semibold text-foreground">Database Maintenance & Reset</CardTitle>
+            <CardTitle className="text-sm font-semibold text-foreground">Database Maintenance &amp; Reset</CardTitle>
           </CardHeader>
           <CardContent className="p-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/40">
@@ -248,10 +398,10 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* 3. Appearance & Locale */}
+        {/* 7. Appearance & Locale */}
         <Card className="border-border/60 bg-card">
           <CardHeader className="py-4 px-5 border-b border-border/60">
-            <CardTitle className="text-sm font-semibold text-foreground">Appearance & Locale</CardTitle>
+            <CardTitle className="text-sm font-semibold text-foreground">Appearance &amp; Locale</CardTitle>
           </CardHeader>
           <CardContent className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             <div>

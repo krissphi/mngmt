@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react';
 import { useStore } from '@/context/store-context';
+import { getMainCategories } from '@/lib/categories';
+import { CategorySubSelect } from '@/components/shared/category-sub-select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DialogFooter } from '@/components/ui/dialog';
@@ -12,7 +14,7 @@ interface ProductFormProps {
 }
 
 export function ProductForm({ onSuccess, onCancel }: ProductFormProps) {
-  const { categories, addProduct } = useStore();
+  const { categories, suppliers, addProduct } = useStore();
 
   const [prodSku, setProdSku] = useState('');
   const [prodName, setProdName] = useState('');
@@ -20,24 +22,29 @@ export function ProductForm({ onSuccess, onCancel }: ProductFormProps) {
   const [prodCost, setProdCost] = useState('');
   const [prodPrice, setProdPrice] = useState('');
   const [prodStock, setProdStock] = useState('1');
+  const [prodMinAlert, setProdMinAlert] = useState('2');
+  const [prodSupplier, setProdSupplier] = useState('');
   const [prodCategory, setProdCategory] = useState(
-    () => categories.find((c) => c.type === 'product')?.id || ''
+    () => getMainCategories(categories, ['product'])[0]?.id || ''
   );
+  const [prodSubCategory, setProdSubCategory] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prodName || !prodPrice) return;
+    if (!prodName.trim() || !prodPrice) return;
 
     addProduct({
-      sku: prodSku || `SKU-${Date.now().toString().slice(-4)}`,
-      name: prodName,
-      brand: prodBrand || 'Generic',
-      categoryId: prodCategory,
+      sku: prodSku.trim() || `SKU-${Date.now().toString().slice(-4)}`,
+      name: prodName.trim(),
+      brand: prodBrand.trim() || 'Generic',
+      categoryId: prodCategory || undefined,
+      subCategoryId: prodSubCategory || undefined,
+      supplierId: prodSupplier || undefined,
       purchaseCost: Number(prodCost) || 0,
       sellingPrice: Number(prodPrice),
       productType: 'regular_inventory',
-      stockOnHand: Number(prodStock) || 0,
-      minStockAlert: 2,
+      stockOnHand: Math.max(0, Number(prodStock) || 0),
+      minStockAlert: Math.max(0, Number(prodMinAlert) || 0),
       status: 'active',
     });
 
@@ -76,38 +83,46 @@ export function ProductForm({ onSuccess, onCancel }: ProductFormProps) {
           />
         </div>
         <div>
-          <label className="text-xs font-medium text-muted-foreground block mb-1">Category</label>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Supplier (Optional)</label>
           <select
-            className="w-full h-9 rounded-md border border-input bg-card px-2.5 text-xs text-foreground"
-            value={prodCategory}
-            onChange={(e) => setProdCategory(e.target.value)}
+            className="w-full h-8.5 rounded-md border border-input bg-card px-2.5 text-xs text-foreground"
+            value={prodSupplier}
+            onChange={(e) => setProdSupplier(e.target.value)}
           >
-            {categories
-              .filter((c) => c.type === 'product')
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
+            <option value="">No Supplier Linked</option>
+            {suppliers.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
           </select>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <CategorySubSelect
+        categories={categories}
+        allowedTypes={['product']}
+        categoryId={prodCategory}
+        subCategoryId={prodSubCategory}
+        onCategoryChange={setProdCategory}
+        onSubCategoryChange={setProdSubCategory}
+      />
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div>
-          <label className="text-xs font-medium text-muted-foreground block mb-1">Purchase Cost (Rp)</label>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Purchase Cost</label>
           <Input
             type="number"
-            placeholder="e.g. 450000"
+            placeholder="450000"
             value={prodCost}
             onChange={(e) => setProdCost(e.target.value)}
           />
         </div>
         <div>
-          <label className="text-xs font-medium text-muted-foreground block mb-1">Selling Price (Rp)</label>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Selling Price</label>
           <Input
             type="number"
-            placeholder="e.g. 650000"
+            placeholder="650000"
             value={prodPrice}
             onChange={(e) => setProdPrice(e.target.value)}
             required
@@ -120,6 +135,15 @@ export function ProductForm({ onSuccess, onCancel }: ProductFormProps) {
             min={0}
             value={prodStock}
             onChange={(e) => setProdStock(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Min Alert</label>
+          <Input
+            type="number"
+            min={0}
+            value={prodMinAlert}
+            onChange={(e) => setProdMinAlert(e.target.value)}
           />
         </div>
       </div>

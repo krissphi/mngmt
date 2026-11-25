@@ -3,7 +3,8 @@
 import React, { useState, useMemo } from 'react';
 import { format, parseISO, isValid } from 'date-fns';
 import { useStore } from '@/context/store-context';
-import { getAvailableStock } from '@/lib/calculations';
+import { getAvailableStock, isSellableProduct, isValidSale } from '@/lib/calculations';
+import { getLocalMonthString } from '@/lib/date';
 import { PageHeader } from '@/components/shared/page-header';
 import { DashboardSummaryKpi } from '@/components/dashboard/financial-kpi';
 import { AnalyticsCharts } from '@/components/dashboard/analytics-charts';
@@ -31,7 +32,7 @@ export default function DashboardPage() {
     const set = new Set<string>();
     transactions.forEach((t) => t.date && set.add(t.date.slice(0, 7)));
     sales.forEach((s) => s.saleDate && set.add(s.saleDate.slice(0, 7)));
-    if (set.size === 0) set.add(format(new Date(), 'yyyy-MM'));
+    if (set.size === 0) set.add(getLocalMonthString());
     return Array.from(set).sort().reverse();
   }, [transactions, sales]);
 
@@ -47,8 +48,7 @@ export default function DashboardPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>('');
   const [selectedYear, setSelectedYear] = useState<string>('');
 
-  // Effective selected values with intelligent fallbacks to active data periods
-  const effectiveMonth = selectedMonth || availableMonths[0] || format(new Date(), 'yyyy-MM');
+  const effectiveMonth = selectedMonth || availableMonths[0] || getLocalMonthString();
   const effectiveYear = selectedYear || availableYears[0] || format(new Date(), 'yyyy');
 
   const totalCashBalance = useMemo(() => accounts.reduce((acc, a) => acc + a.balance, 0), [accounts]);
@@ -73,14 +73,15 @@ export default function DashboardPage() {
     return { personalIncome: income, personalExpenses: expenses };
   }, [filteredTransactions]);
 
-  // Synchronized business sales filtering based on active dateFilter mode
-  const businessSalesFiltered = useMemo(() => {
-    if (dateFilter === 'month') return sales.filter((s) => s.saleDate && s.saleDate.startsWith(effectiveMonth));
-    if (dateFilter === 'year') return sales.filter((s) => s.saleDate && s.saleDate.startsWith(effectiveYear));
-    return sales;
-  }, [sales, dateFilter, effectiveMonth, effectiveYear]);
+  // Canonical valid sales (excludes cancelled & returned orders)
+  const allValidSales = useMemo(() => sales.filter(isValidSale), [sales]);
 
-  // Synchronized revenue and profit
+  const businessSalesFiltered = useMemo(() => {
+    if (dateFilter === 'month') return allValidSales.filter((s) => s.saleDate && s.saleDate.startsWith(effectiveMonth));
+    if (dateFilter === 'year') return allValidSales.filter((s) => s.saleDate && s.saleDate.startsWith(effectiveYear));
+    return allValidSales;
+  }, [allValidSales, dateFilter, effectiveMonth, effectiveYear]);
+
   const { businessRevenue, businessNetProfit } = useMemo(() => {
     let rev = 0;
     let profit = 0;
@@ -91,24 +92,24 @@ export default function DashboardPage() {
     return { businessRevenue: rev, businessNetProfit: profit };
   }, [businessSalesFiltered]);
 
-  // Inventory assets status
+  // Sellable inventory only (excludes personal collectibles/assets)
   const { availableStockCount, inventoryCapitalValue, lowStockProducts } = useMemo(() => {
     let stock = 0;
     let capital = 0;
     const lowStock = [];
     for (const p of products) {
+      if (!isSellableProduct(p)) continue;
       stock += getAvailableStock(p);
       capital += p.stockOnHand * p.purchaseCost;
-      if (p.stockOnHand <= p.minStockAlert) {
+      if (p.status === 'active' && p.stockOnHand <= p.minStockAlert) {
         lowStock.push(p);
       }
     }
     return { availableStockCount: stock, inventoryCapitalValue: capital, lowStockProducts: lowStock };
   }, [products]);
 
-  // Dynamic, filter-responsive chart data
+  // Dynamic, filter-responsive chart data (consistent with KPIs: excludes cancelled/returned)
   const { chartData, periodLabel } = useMemo(() => {
-    // 1. MONTH MODE: Weekly intervals within the selected month
     if (dateFilter === 'month') {
       const [yStr, mStr] = effectiveMonth.split('-');
       const y = parseInt(yStr, 10) || 2026;
@@ -126,7 +127,7 @@ export default function DashboardPage() {
       }
 
       const monthTrx = transactions.filter((t) => t.date && t.date.startsWith(effectiveMonth));
-      const monthSales = sales.filter((s) => s.saleDate && s.saleDate.startsWith(effectiveMonth));
+      const monthSales = allValidSales.filter((s) => s.saleDate && s.saleDate.startsWith(effectiveMonth));
 
       const data = buckets.map((b) => {
         let income = 0;
@@ -158,11 +159,10 @@ export default function DashboardPage() {
       };
     }
 
-    // 2. YEAR MODE: 12 Monthly intervals within the selected year
     if (dateFilter === 'year') {
       const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const yearTrx = transactions.filter((t) => t.date && t.date.startsWith(effectiveYear));
-      const yearSales = sales.filter((s) => s.saleDate && s.saleDate.startsWith(effectiveYear));
+      const yearSales = allValidSales.filter((s) => s.saleDate && s.saleDate.startsWith(effectiveYear));
 
       const data = MONTH_NAMES.map((name, idx) => {
         const monthKey = `${effectiveYear}-${String(idx + 1).padStart(2, '0')}`;
@@ -193,7 +193,6 @@ export default function DashboardPage() {
       };
     }
 
-    // 3. ALL TIME MODE: Annual intervals across all recorded years
     const sortedYears = [...availableYears].sort();
     const data = sortedYears.map((yr) => {
       let income = 0;
@@ -207,7 +206,7 @@ export default function DashboardPage() {
 
       let revenue = 0;
       let profit = 0;
-      for (const s of sales) {
+      for (const s of allValidSales) {
         if (s.saleDate && s.saleDate.startsWith(yr)) {
           revenue += s.grossSales;
           profit += s.netProfit;
@@ -221,7 +220,7 @@ export default function DashboardPage() {
       chartData: data,
       periodLabel: 'All Time • Annual Breakdown',
     };
-  }, [dateFilter, effectiveMonth, effectiveYear, availableYears, transactions, sales]);
+  }, [dateFilter, effectiveMonth, effectiveYear, availableYears, transactions, allValidSales]);
 
   if (!isLoaded) {
     return (
@@ -231,6 +230,9 @@ export default function DashboardPage() {
     );
   }
 
+  const incomePeriodLabel =
+    dateFilter === 'month' ? 'Monthly Income' : dateFilter === 'year' ? 'Annual Income' : 'All-Time Income';
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -239,39 +241,38 @@ export default function DashboardPage() {
         action={
           <div className="flex flex-wrap items-center gap-2">
             {/* Filter Mode Selector */}
-            <div className="flex items-center gap-1 bg-muted/60 p-0.5 rounded-lg text-xs font-medium border border-border/50">
+            <div className="inline-flex items-center gap-1 bg-secondary/40 backdrop-blur-xs p-1 rounded-xl text-xs font-medium border border-border/40">
               <button
                 onClick={() => setDateFilter('month')}
-                className={`px-3 py-1 rounded-md transition-colors ${
-                  dateFilter === 'month' ? 'bg-card text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
+                className={`px-3 py-1 rounded-lg transition-all duration-150 ${
+                  dateFilter === 'month' ? 'bg-card text-foreground font-semibold shadow-xs border border-border/60' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 Month
               </button>
               <button
                 onClick={() => setDateFilter('year')}
-                className={`px-3 py-1 rounded-md transition-colors ${
-                  dateFilter === 'year' ? 'bg-card text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
+                className={`px-3 py-1 rounded-lg transition-all duration-150 ${
+                  dateFilter === 'year' ? 'bg-card text-foreground font-semibold shadow-xs border border-border/60' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 Year
               </button>
               <button
                 onClick={() => setDateFilter('all')}
-                className={`px-3 py-1 rounded-md transition-colors ${
-                  dateFilter === 'all' ? 'bg-card text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
+                className={`px-3 py-1 rounded-lg transition-all duration-150 ${
+                  dateFilter === 'all' ? 'bg-card text-foreground font-semibold shadow-xs border border-border/60' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 All Time
               </button>
             </div>
 
-            {/* Month Dropdown when in Month filter mode */}
             {dateFilter === 'month' && (
               <select
                 value={effectiveMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
-                className="h-7.5 rounded-md border border-input bg-card px-2.5 text-xs text-foreground font-medium focus-visible:outline-none shadow-2xs cursor-pointer"
+                className="h-8 rounded-xl border border-border/50 bg-card/60 px-3 text-xs text-foreground font-medium focus-visible:outline-none shadow-xs cursor-pointer"
                 title="Select month to analyze"
               >
                 {availableMonths.map((m) => (
@@ -282,12 +283,11 @@ export default function DashboardPage() {
               </select>
             )}
 
-            {/* Year Dropdown when in Year filter mode */}
             {dateFilter === 'year' && (
               <select
                 value={effectiveYear}
                 onChange={(e) => setSelectedYear(e.target.value)}
-                className="h-7.5 rounded-md border border-input bg-card px-2.5 text-xs text-foreground font-medium focus-visible:outline-none shadow-2xs cursor-pointer"
+                className="h-8 rounded-xl border border-border/50 bg-card/60 px-3 text-xs text-foreground font-medium focus-visible:outline-none shadow-xs cursor-pointer"
                 title="Select year to analyze"
               >
                 {availableYears.map((y) => (
@@ -305,6 +305,7 @@ export default function DashboardPage() {
         totalCash={totalCashBalance}
         personalIncome={personalIncome}
         personalExpenses={personalExpenses}
+        incomeLabel={incomePeriodLabel}
         businessRevenue={businessRevenue}
         businessNetProfit={businessNetProfit}
         availableStockCount={availableStockCount}

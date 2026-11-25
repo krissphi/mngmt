@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useStore } from '@/context/store-context';
 import { Subscription } from '@/types';
 import { formatIDR } from '@/lib/currency';
+import { getLocalDateString } from '@/lib/date';
 import { advanceNextBillingDate } from '@/context/store-handlers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,7 +34,7 @@ interface PaySubscriptionFormProps {
 function PaySubscriptionForm({ subscription, onClose, onConfirm }: PaySubscriptionFormProps) {
   const { accounts, categories } = useStore();
 
-  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [paymentDate, setPaymentDate] = useState(() => getLocalDateString());
   const [selectedAccountId, setSelectedAccountId] = useState(() => subscription.accountId || accounts[0]?.id || '');
   const [paymentAmount, setPaymentAmount] = useState(() => String(subscription.amount));
 

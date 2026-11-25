@@ -139,11 +139,13 @@ mymoney/
 │   ├── app/                   # Next.js App Router pages
 │   │   ├── page.tsx           # Main executive dashboard
 │   │   ├── layout.tsx         # Root layout with theme, store, and PWA providers
-│   │   ├── personal/          # Personal finance module (accounts, budgets, goals)
-│   │   ├── business/          # Business module (products, stock, sales orders)
-│   │   ├── finance/           # Accounting center (ledger, cash flow, P&L, balance sheet)
-│   │   ├── reports/           # Data exchange (CSV/Excel export/import, channel reports)
-│   │   └── settings/          # System preferences, data backup, restore, reset
+│   │   ├── manifest.ts        # Web App Manifest definition
+│   │   ├── finance/           # Personal finance (pockets, transactions, budgets, subs, goals, wishlist)
+│   │   ├── collection/        # Personal collectibles & asset valuation
+│   │   ├── seller/            # Seller center (products, stock audit, sales orders, suppliers)
+│   │   ├── ledger/            # Accounting center (general ledger, cash flow, P&L, balance sheet, debts)
+│   │   ├── reports/           # Data exchange (CSV/Excel export/import with mapper, channel reports)
+│   │   └── settings/          # Categories & sub-categories, fee presets, PIN lock, backup & reset
 │   ├── components/            # Reusable UI and domain components
 │   │   ├── assets/            # Asset cards and asset creation dialogs
 │   │   ├── business/          # Product tables, sales forms, stock adjustment modals
@@ -240,6 +242,7 @@ In the project root, you can run:
 - `pnpm build` — Builds the application for production deployment.
 - `pnpm start` — Starts the production server using the compiled output.
 - `pnpm lint` — Runs ESLint to verify code quality and coding standards.
+- `pnpm test` — Runs automated unit tests for calculations, categories, CSV exchange, Zod validation, and store handlers.
 
 ---
 

@@ -8,7 +8,8 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     billingCycle: 'monthly',
     billingDay: 15,
     accountId: 'acc-2', // Mandiri Personal
-    categoryId: 'cat-exp-5', // Entertainment
+    categoryId: 'cat-exp-5', // Lifestyle
+    subCategoryId: 'sub-lif-stream',
     status: 'active',
     nextBillingDate: '2026-11-15',
     description: 'Family 4K UHD streaming plan',
@@ -23,6 +24,7 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     billingDay: 22,
     accountId: 'acc-5', // GoPay
     categoryId: 'cat-exp-5',
+    subCategoryId: 'sub-lif-stream',
     status: 'active',
     nextBillingDate: '2026-11-22',
     description: 'Ad-free high quality music streaming',
@@ -36,7 +38,8 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     billingCycle: 'monthly',
     billingDay: 5,
     accountId: 'acc-2',
-    categoryId: 'cat-exp-2', // Internet & Cellular
+    categoryId: 'cat-exp-2', // Bills & Utilities
+    subCategoryId: 'sub-bill-internet',
     status: 'active',
     nextBillingDate: '2026-12-05',
     description: 'High-speed fiber home broadband & Wi-Fi',
@@ -51,6 +54,7 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     billingDay: 1,
     accountId: 'acc-2',
     categoryId: 'cat-exp-2',
+    subCategoryId: 'sub-bill-cloud',
     status: 'active',
     nextBillingDate: '2026-12-01',
     description: 'Cloud backup for photos, files, and devices',
@@ -65,9 +69,10 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     billingDay: 18,
     accountId: 'acc-2',
     categoryId: 'cat-exp-2',
+    subCategoryId: 'sub-bill-cloud',
     status: 'active',
     nextBillingDate: '2026-11-18',
-    description: 'GPT-4o intelligence for development & research',
+    description: 'AI workspace subscription for development & research',
     color: '#10A37F',
     createdAt: '2026-03-18',
   },
@@ -78,7 +83,8 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     billingCycle: 'yearly',
     billingDay: 10,
     accountId: 'acc-1', // BCA Business
-    categoryId: 'cat-biz-4',
+    categoryId: 'cat-biz-1',
+    subCategoryId: 'sub-biz-ops',
     status: 'active',
     nextBillingDate: '2027-04-10',
     description: 'Annual business cloud server and domain hosting',
