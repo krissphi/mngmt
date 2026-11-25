@@ -36,8 +36,13 @@ export function TransactionsTab() {
     return Array.from(set).sort().reverse();
   }, [transactions]);
 
-  const personalMainCategories = useMemo(
-    () => getMainCategories(categories, ['personal_expense', 'personal_income']),
+  const outcomeMainCategories = useMemo(
+    () => getMainCategories(categories, { flow: 'expense' }),
+    [categories]
+  );
+
+  const incomeMainCategories = useMemo(
+    () => getMainCategories(categories, { flow: 'income' }),
     [categories]
   );
 
@@ -258,19 +263,40 @@ export function TransactionsTab() {
           aria-label="Filter by category"
         >
           <option value="all">All Categories</option>
-          {personalMainCategories.map((main) => {
-            const subs = getSubCategories(categories, main.id);
-            return (
-              <React.Fragment key={main.id}>
-                <option value={main.id}>{main.name}</option>
-                {subs.map((sub) => (
-                  <option key={sub.id} value={sub.id}>
-                    ↳ {sub.name}
-                  </option>
-                ))}
-              </React.Fragment>
-            );
-          })}
+          {filterType !== 'income' && (
+            <optgroup label="Outcome">
+              {outcomeMainCategories.map((main) => {
+                const subs = getSubCategories(categories, main.id);
+                return (
+                  <React.Fragment key={main.id}>
+                    <option value={main.id}>{main.name}</option>
+                    {subs.map((sub) => (
+                      <option key={sub.id} value={sub.id}>
+                        ↳ {sub.name}
+                      </option>
+                    ))}
+                  </React.Fragment>
+                );
+              })}
+            </optgroup>
+          )}
+          {filterType !== 'expense' && (
+            <optgroup label="Income">
+              {incomeMainCategories.map((main) => {
+                const subs = getSubCategories(categories, main.id);
+                return (
+                  <React.Fragment key={main.id}>
+                    <option value={main.id}>{main.name}</option>
+                    {subs.map((sub) => (
+                      <option key={sub.id} value={sub.id}>
+                        ↳ {sub.name}
+                      </option>
+                    ))}
+                  </React.Fragment>
+                );
+              })}
+            </optgroup>
+          )}
         </select>
 
         <select

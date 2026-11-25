@@ -5,7 +5,7 @@ import { useStore } from '@/context/store-context';
 import { formatCompactIDR } from '@/lib/currency';
 import { getMainCategories } from '@/lib/categories';
 import { CategorySubSelect } from '@/components/shared/category-sub-select';
-import { AssetCondition, Asset } from '@/types';
+import { AssetCondition, Asset, ProductType } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -34,6 +34,7 @@ export function AssetFormSection({
   const [purchasePrice, setPurchasePrice] = useState(initialData ? String(initialData.purchasePrice) : '');
   const [currentVal, setCurrentVal] = useState(initialData ? String(initialData.currentEstimatedValue) : '');
   const [condition, setCondition] = useState<AssetCondition>(initialData?.condition || 'mint');
+  const [productType, setProductType] = useState<ProductType>(initialData?.productType || 'asset');
   const [paymentAccount, setPaymentAccount] = useState('');
 
   const syncKey = `${open}-${initialData?.id || 'new'}`;
@@ -48,15 +49,17 @@ export function AssetFormSection({
         setPurchasePrice(String(initialData.purchasePrice));
         setCurrentVal(String(initialData.currentEstimatedValue));
         setCondition(initialData.condition || 'mint');
+        setProductType(initialData.productType || 'asset');
         setPaymentAccount('');
       } else {
         setName('');
         setBrand('');
-        setCategoryId(getMainCategories(categories, ['product'])[0]?.id || '');
+        setCategoryId(getMainCategories(categories, { flow: 'expense' })[0]?.id || '');
         setSubCategoryId('');
         setPurchasePrice('');
         setCurrentVal('');
         setCondition('mint');
+        setProductType('asset');
         setPaymentAccount('');
       }
     }
@@ -83,6 +86,7 @@ export function AssetFormSection({
         currentEstimatedValue: estVal,
         sellingPrice: estVal,
         condition,
+        productType,
       });
     } else {
       addAsset(
@@ -98,7 +102,7 @@ export function AssetFormSection({
           sellingPrice: estVal,
           condition,
           status: 'active',
-          productType: 'asset',
+          productType,
           stockOnHand: 1,
           stockReserved: 0,
           stockSold: 0,
@@ -139,14 +143,26 @@ export function AssetFormSection({
 
       <CategorySubSelect
         categories={categories}
-        allowedTypes={['product']}
+        flow="expense"
         categoryId={categoryId}
         subCategoryId={subCategoryId}
         onCategoryChange={setCategoryId}
         onSubCategoryChange={setSubCategoryId}
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Product / Collection Type</label>
+          <select
+            className="w-full h-9 rounded-md border border-input bg-card px-3 text-xs text-foreground focus-visible:outline-none"
+            value={productType}
+            onChange={(e) => setProductType(e.target.value as ProductType)}
+          >
+            <option value="asset">Personal Collection (Collectible Asset)</option>
+            <option value="preloved">Preloved (Used / Secondhand)</option>
+            <option value="regular_inventory">Regular Inventory</option>
+          </select>
+        </div>
         <div>
           <label className="text-xs font-medium text-muted-foreground block mb-1">Physical Condition</label>
           <select
@@ -160,6 +176,9 @@ export function AssetFormSection({
             <option value="needs_repair">Needs Repair</option>
           </select>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="text-xs font-medium text-muted-foreground block mb-1">Original Cost (Rp)</label>
           <Input

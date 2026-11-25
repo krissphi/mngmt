@@ -6,7 +6,14 @@ import { useStore } from '@/context/store-context';
 import { formatIDR, formatSignedIDR } from '@/lib/currency';
 import { resolveCategoryPair } from '@/lib/categories';
 import { Badge } from '@/components/ui/badge';
-import { ArrowRightLeft, Pencil, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import { ArrowRightLeft, Pencil, Trash2, ArrowUp, ArrowDown, ArrowUpDown, MoreHorizontal } from 'lucide-react';
 import {
   Table,
   TableHeader,
@@ -212,29 +219,36 @@ export function AssetsTable({
                     </span>
                   </TableCell>
                   <TableCell className="py-3 px-2 text-center whitespace-nowrap">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => onTransferToProduct(asset)}
-                        className="p-1.5 text-muted-foreground hover:text-primary rounded transition-colors"
-                        title="Transfer to Store Inventory (Sell)"
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        className="inline-flex items-center justify-center size-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors cursor-pointer outline-none"
+                        title="Item Actions"
+                        aria-label={`Actions for ${asset.name}`}
                       >
-                        <ArrowRightLeft className="size-3.5" />
-                      </button>
-                      <button
-                        onClick={() => onEdit(asset)}
-                        className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors"
-                        title="Edit Asset"
-                      >
-                        <Pencil className="size-3.5" />
-                      </button>
-                      <button
-                        onClick={() => onDelete(asset.id)}
-                        className="p-1.5 text-muted-foreground hover:text-destructive rounded transition-colors"
-                        title="Delete Asset"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
-                    </div>
+                        <MoreHorizontal className="size-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => onTransferToProduct(asset)}
+                          className="text-primary"
+                        >
+                          <ArrowRightLeft className="size-3.5" />
+                          <span>Move to Seller</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => onEdit(asset)}>
+                          <Pencil className="size-3.5" />
+                          <span>Edit Item</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => onDelete(asset.id)}
+                        >
+                          <Trash2 className="size-3.5" />
+                          <span>Delete</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               );

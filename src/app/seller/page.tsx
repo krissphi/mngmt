@@ -51,7 +51,7 @@ function SellerContent() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Seller Center"
+        title="Seller"
         description="Manage product catalog, inventory restocks, stock audit trail, suppliers, and multichannel sales."
       />
 
@@ -77,7 +77,7 @@ function SellerContent() {
           }`}
         >
           <Package className="size-3.5" />
-          <span>Products &amp; Stock</span>
+          <span>Products</span>
         </button>
         <button
           onClick={() => setActiveTab('sales')}
@@ -88,7 +88,7 @@ function SellerContent() {
           }`}
         >
           <ShoppingCart className="size-3.5" />
-          <span>Sales Orders</span>
+          <span>Orders</span>
         </button>
         <button
           onClick={() => setActiveTab('audit')}
@@ -99,7 +99,7 @@ function SellerContent() {
           }`}
         >
           <History className="size-3.5" />
-          <span>Stock Audit</span>
+          <span>Audit</span>
         </button>
         <button
           onClick={() => setActiveTab('suppliers')}

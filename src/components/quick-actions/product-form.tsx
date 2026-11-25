@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useStore } from '@/context/store-context';
 import { getMainCategories } from '@/lib/categories';
 import { CategorySubSelect } from '@/components/shared/category-sub-select';
+import { ProductType } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DialogFooter } from '@/components/ui/dialog';
@@ -16,16 +17,16 @@ interface ProductFormProps {
 export function ProductForm({ onSuccess, onCancel }: ProductFormProps) {
   const { categories, suppliers, addProduct } = useStore();
 
-  const [prodSku, setProdSku] = useState('');
   const [prodName, setProdName] = useState('');
   const [prodBrand, setProdBrand] = useState('');
+  const [prodType, setProdType] = useState<ProductType>('regular_inventory');
   const [prodCost, setProdCost] = useState('');
   const [prodPrice, setProdPrice] = useState('');
   const [prodStock, setProdStock] = useState('1');
   const [prodMinAlert, setProdMinAlert] = useState('2');
   const [prodSupplier, setProdSupplier] = useState('');
   const [prodCategory, setProdCategory] = useState(
-    () => getMainCategories(categories, ['product'])[0]?.id || ''
+    () => getMainCategories(categories, { flow: 'expense' })[0]?.id || ''
   );
   const [prodSubCategory, setProdSubCategory] = useState('');
 
@@ -34,7 +35,7 @@ export function ProductForm({ onSuccess, onCancel }: ProductFormProps) {
     if (!prodName.trim() || !prodPrice) return;
 
     addProduct({
-      sku: prodSku.trim() || `SKU-${Date.now().toString().slice(-4)}`,
+      sku: `SKU-${Date.now().toString().slice(-6)}`,
       name: prodName.trim(),
       brand: prodBrand.trim() || 'Generic',
       categoryId: prodCategory || undefined,
@@ -42,7 +43,7 @@ export function ProductForm({ onSuccess, onCancel }: ProductFormProps) {
       supplierId: prodSupplier || undefined,
       purchaseCost: Number(prodCost) || 0,
       sellingPrice: Number(prodPrice),
-      productType: 'regular_inventory',
+      productType: prodType,
       stockOnHand: Math.max(0, Number(prodStock) || 0),
       minStockAlert: Math.max(0, Number(prodMinAlert) || 0),
       status: 'active',
@@ -53,16 +54,8 @@ export function ProductForm({ onSuccess, onCancel }: ProductFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3.5">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs font-medium text-muted-foreground block mb-1">SKU / Item Code</label>
-          <Input
-            placeholder="e.g. TF-SS-86"
-            value={prodSku}
-            onChange={(e) => setProdSku(e.target.value)}
-          />
-        </div>
-        <div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="sm:col-span-2">
           <label className="text-xs font-medium text-muted-foreground block mb-1">Product Name</label>
           <Input
             placeholder="Full product title..."
@@ -70,6 +63,18 @@ export function ProductForm({ onSuccess, onCancel }: ProductFormProps) {
             onChange={(e) => setProdName(e.target.value)}
             required
           />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Product Type</label>
+          <select
+            className="w-full h-8.5 rounded-md border border-input bg-card px-2.5 text-xs text-foreground focus-visible:outline-none"
+            value={prodType}
+            onChange={(e) => setProdType(e.target.value as ProductType)}
+          >
+            <option value="regular_inventory">New Stock (Regular)</option>
+            <option value="preloved">Preloved (Secondhand)</option>
+            <option value="personal_collection">Personal Collection</option>
+          </select>
         </div>
       </div>
 
@@ -85,7 +90,7 @@ export function ProductForm({ onSuccess, onCancel }: ProductFormProps) {
         <div>
           <label className="text-xs font-medium text-muted-foreground block mb-1">Supplier (Optional)</label>
           <select
-            className="w-full h-8.5 rounded-md border border-input bg-card px-2.5 text-xs text-foreground"
+            className="w-full h-8.5 rounded-md border border-input bg-card px-2.5 text-xs text-foreground focus-visible:outline-none"
             value={prodSupplier}
             onChange={(e) => setProdSupplier(e.target.value)}
           >
@@ -101,7 +106,7 @@ export function ProductForm({ onSuccess, onCancel }: ProductFormProps) {
 
       <CategorySubSelect
         categories={categories}
-        allowedTypes={['product']}
+        flow="expense"
         categoryId={prodCategory}
         subCategoryId={prodSubCategory}
         onCategoryChange={setProdCategory}

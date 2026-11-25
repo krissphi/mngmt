@@ -135,7 +135,7 @@ export function ExpenseForm({ onSuccess, onCancel }: ExpenseFormProps) {
 
       <CategorySubSelect
         categories={categories}
-        allowedTypes={['personal_expense', 'business_expense', 'product']}
+        flow="expense"
         categoryId={trxCategory}
         subCategoryId={trxSubCategory}
         onCategoryChange={handleCategoryChange}

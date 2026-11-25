@@ -3,7 +3,8 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '@/context/store-context';
 import { Account } from '@/types';
-import { formatIDR } from '@/lib/currency';
+import { formatIDR, formatSignedIDR } from '@/lib/currency';
+import { calculateCashBreakdownTotal } from '@/lib/calculations';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -16,6 +17,8 @@ import {
   Pencil,
   ArrowRightLeft,
   Calculator,
+  AlertCircle,
+  CheckCircle2,
 } from 'lucide-react';
 import { AccountDialog, AccountSavePayload } from './account-dialog';
 import { TransferDialog } from './transfer-dialog';
@@ -171,6 +174,8 @@ export function AccountsTab() {
                   .filter((d) => (acc.cashBreakdown?.[d.value] || 0) > 0)
                   .map((d) => `${acc.cashBreakdown?.[d.value]}x ${d.label.replace('Rp ', '')}`)
               : [];
+            const physicalTotal = isCash ? calculateCashBreakdownTotal(acc.cashBreakdown) : 0;
+            const cashDiff = isCash ? physicalTotal - acc.balance : 0;
 
             return (
               <div
@@ -233,17 +238,35 @@ export function AccountsTab() {
                     {formatIDR(acc.balance)}
                   </div>
 
-                  {/* Cash Pocket: Clean, un-nested breakdown summary */}
+                  {/* Cash Pocket: Clean, un-nested breakdown summary + sync indicator */}
                   {isCash && (
-                    <div className="mt-2 text-[11px] text-muted-foreground line-clamp-1 font-mono">
-                      {activeBills.length > 0 ? (
-                        <span className="text-muted-foreground">
-                          Bills: <b className="text-foreground/90 font-normal">{activeBills.slice(0, 3).join(' • ')}</b>
-                          {activeBills.length > 3 && ` +${activeBills.length - 3} more`}
-                        </span>
-                      ) : (
-                        <span className="italic text-muted-foreground/60">No physical breakdown recorded</span>
-                      )}
+                    <div className="mt-2 space-y-1">
+                      <div className="text-[11px] text-muted-foreground line-clamp-1 font-mono">
+                        {activeBills.length > 0 ? (
+                          <span className="text-muted-foreground">
+                            Bills: <b className="text-foreground/90 font-normal">{activeBills.slice(0, 3).join(' • ')}</b>
+                            {activeBills.length > 3 && ` +${activeBills.length - 3} more`}
+                          </span>
+                        ) : (
+                          <span className="italic text-muted-foreground/60">No physical breakdown recorded</span>
+                        )}
+                      </div>
+                      {cashDiff === 0 && (acc.balance > 0 || activeBills.length > 0) ? (
+                        <div className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-medium">
+                          <CheckCircle2 className="size-3 shrink-0" />
+                          <span>Physical bills match balance</span>
+                        </div>
+                      ) : cashDiff !== 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setCashCalcAccount(acc)}
+                          className="inline-flex items-center gap-1 text-[10px] text-amber-400 hover:text-amber-300 font-medium transition-colors"
+                          title="Click to recount physical bills and sync"
+                        >
+                          <AlertCircle className="size-3 shrink-0" />
+                          <span>Bills diff {formatSignedIDR(cashDiff)} • Sync</span>
+                        </button>
+                      ) : null}
                     </div>
                   )}
                 </div>

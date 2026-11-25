@@ -52,7 +52,7 @@ export default function ReportsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Reports & Data Management"
+        title="Reports"
         description="Export/Import financial data (CSV or Excel) and analyze multichannel sales."
         action={
           <Button onClick={() => window.print()} variant="outline" size="sm" className="text-xs h-8.5 rounded-lg border-border/60">

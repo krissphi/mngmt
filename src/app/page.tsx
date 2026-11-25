@@ -98,7 +98,7 @@ export default function DashboardPage() {
     let capital = 0;
     const lowStock = [];
     for (const p of products) {
-      if (!isSellableProduct(p)) continue;
+      if (!isSellableProduct(p) || p.status === 'archived') continue;
       stock += getAvailableStock(p);
       capital += p.stockOnHand * p.purchaseCost;
       if (p.status === 'active' && p.stockOnHand <= p.minStockAlert) {

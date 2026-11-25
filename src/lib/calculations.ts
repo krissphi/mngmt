@@ -1,4 +1,20 @@
-import type { Product, Sale, SalesChannel } from '@/types';
+import type { CashBreakdown, Product, Sale, SalesChannel } from '@/types';
+
+/**
+ * Sum physical Rupiah bills and coins from a CashBreakdown map.
+ */
+export function calculateCashBreakdownTotal(breakdown?: CashBreakdown): number {
+  if (!breakdown) return 0;
+  let total = 0;
+  for (const [denomStr, count] of Object.entries(breakdown)) {
+    const denom = Number(denomStr);
+    const qty = Number(count);
+    if (Number.isFinite(denom) && Number.isFinite(qty) && qty > 0) {
+      total += denom * qty;
+    }
+  }
+  return total;
+}
 
 /**
  * Canonical predicate: whether a product belongs to sellable store inventory

@@ -175,7 +175,7 @@ export function SubscriptionDialog({ open, onOpenChange, initialSubscription }: 
 
           <CategorySubSelect
             categories={categories}
-            allowedTypes={['personal_expense', 'business_expense']}
+            flow="expense"
             categoryId={categoryId}
             subCategoryId={subCategoryId}
             onCategoryChange={setCategoryId}

@@ -1,10 +1,12 @@
 import type {
   Product,
+  Asset,
   Sale,
   InventoryMovement,
   Account,
   Transaction,
   OrderStatus,
+  SavingsGoal,
 } from '@/types';
 import { addMonths, addYears, addWeeks, addDays, format, parseISO, isValid } from 'date-fns';
 import { calculateWeightedAverageCost } from '@/lib/calculations';
@@ -495,6 +497,7 @@ export function applyStockPurchase(
           stockOnHand: newStock,
           purchaseCost: newAvgCost,
           supplierId: params.supplierId || p.supplierId,
+          status: p.status === 'archived' ? ('active' as const) : p.status,
           updatedAt: params.nowIso,
         }
       : p
@@ -571,4 +574,131 @@ export function advanceNextBillingDate(dateStr: string, cycle: 'monthly' | 'year
   } catch {
     return format(addMonths(new Date(), 1), 'yyyy-MM-dd');
   }
+}
+
+export function applyDepositToSavingsGoal(params: {
+  savingsGoals: SavingsGoal[];
+  accounts: Account[];
+  transactions: Transaction[];
+  goalId: string;
+  amount: number;
+  accountId?: string;
+  date: string;
+  nowIso: string;
+}): {
+  updatedGoals: SavingsGoal[];
+  updatedAccounts: Account[];
+  updatedTransactions: Transaction[];
+} {
+  if (params.amount <= 0) {
+    return {
+      updatedGoals: params.savingsGoals,
+      updatedAccounts: params.accounts,
+      updatedTransactions: params.transactions,
+    };
+  }
+  const goal = params.savingsGoals.find((g) => g.id === params.goalId);
+  if (!goal) {
+    return {
+      updatedGoals: params.savingsGoals,
+      updatedAccounts: params.accounts,
+      updatedTransactions: params.transactions,
+    };
+  }
+
+  let updatedTransactions = params.transactions;
+  let updatedAccounts = params.accounts;
+
+  if (params.accountId) {
+    const trx: Transaction = {
+      id: generateSecureId('trx'),
+      date: params.date,
+      scope: 'personal',
+      type: 'transfer',
+      amount: params.amount,
+      accountId: params.accountId,
+      sourceModule: 'savings_deposit',
+      referenceId: params.goalId,
+      description: `Savings Goal Deposit: ${goal.name}`,
+      createdAt: params.nowIso,
+    };
+    updatedTransactions = [trx, ...params.transactions];
+    updatedAccounts = applyTransactionBalance(params.accounts, trx, 1, params.nowIso);
+  }
+
+  const updatedGoals = params.savingsGoals.map((g) =>
+    g.id === params.goalId
+      ? { ...g, currentAmount: (g.currentAmount || 0) + params.amount }
+      : g
+  );
+
+  return { updatedGoals, updatedAccounts, updatedTransactions };
+}
+
+export function applyTransferProductToCollection(params: {
+  products: Product[];
+  productId: string;
+  condition?: Asset['condition'];
+  nowIso: string;
+  dateStr: string;
+  timestamp?: string;
+}): {
+  updatedProducts: Product[];
+  movement?: InventoryMovement;
+} {
+  const target = params.products.find((p) => p.id === params.productId);
+  if (!target || target.stockOnHand <= 0) {
+    return { updatedProducts: params.products };
+  }
+
+  const ts = params.timestamp || params.nowIso.replace('T', ' ').substring(0, 19);
+  const nextStock = Math.max(0, target.stockOnHand - 1);
+
+  const movement = createInventoryMovement(
+    params.productId,
+    'adjustment_out',
+    -1,
+    `Transferred 1 unit of ${target.name} to Personal Collection`,
+    params.productId,
+    target.stockOnHand,
+    nextStock,
+    ts
+  );
+
+  const newAsset: Product = {
+    id: generateSecureId('ast'),
+    sku: `COL-${Date.now().toString().slice(-4)}`,
+    name: target.name,
+    brand: target.brand,
+    categoryId: target.categoryId,
+    subCategoryId: target.subCategoryId,
+    category: target.category || 'Collection',
+    purchaseCost: target.purchaseCost,
+    purchasePrice: target.purchaseCost,
+    sellingPrice: target.sellingPrice || target.purchaseCost,
+    currentEstimatedValue: target.sellingPrice || target.purchaseCost,
+    condition: params.condition || target.condition || 'mint',
+    productType: 'asset',
+    stockOnHand: 1,
+    stockReserved: 0,
+    stockSold: 0,
+    minStockAlert: 0,
+    status: 'active',
+    imageUrl: target.imageUrl,
+    description: target.description,
+    purchaseDate: params.dateStr,
+    createdAt: params.dateStr,
+    updatedAt: params.nowIso,
+  };
+
+  const updatedProducts = [
+    newAsset,
+    ...params.products.map((p) =>
+      p.id === params.productId
+        ? { ...p, stockOnHand: nextStock, updatedAt: params.nowIso }
+        : p
+    ),
+  ];
+
+  return { updatedProducts, movement };
 }

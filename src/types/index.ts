@@ -23,12 +23,14 @@ export interface Account {
 
 export type Pocket = Account;
 
+export type CategoryFlow = 'income' | 'expense';
 export type CategoryType = 'universal' | 'personal_income' | 'personal_expense' | 'business_expense' | 'product';
 
 export interface Category {
   id: string;
   name: string;
   type: CategoryType;
+  flow?: CategoryFlow;
   parentId?: string; // undefined = Main Category, set = Sub Category
   icon?: string;
   color?: string;
@@ -44,6 +46,7 @@ export type SourceModule =
   | 'business_expense'
   | 'asset_sale'
   | 'transfer'
+  | 'savings_deposit'
   | 'balance_adjustment'
   | 'debt_settlement'
   | 'manual';

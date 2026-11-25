@@ -23,15 +23,19 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 export function BalanceSheetTab() {
-  const { accounts, products, assets, subscriptions, categories, sales, debts } = useStore();
+  const { accounts, products, assets, subscriptions, categories, sales, debts, savingsGoals } = useStore();
 
   const todayStr = useMemo(() => format(new Date(), 'MMMM d, yyyy'), []);
 
-  // 1. Current Assets (Cash, Bank, E-Wallets + Receivables/Escrow)
+  // 1. Current Assets (Cash, Bank, E-Wallets + Savings Goals + Receivables/Escrow)
   const activeAccounts = useMemo(() => accounts.filter((a) => a.isActive), [accounts]);
   const totalCashAndBank = useMemo(
     () => activeAccounts.reduce((sum, a) => sum + a.balance, 0),
     [activeAccounts]
+  );
+  const totalSavingsGoals = useMemo(
+    () => savingsGoals.reduce((sum, g) => sum + (g.currentAmount || 0), 0),
+    [savingsGoals]
   );
 
   const pendingEscrowReceivables = useMemo(() => {
@@ -108,7 +112,8 @@ export function BalanceSheetTab() {
   }, [activeAssets, categories]);
 
   // TOTAL ASSETS
-  const totalAssets = totalCashAndBank + totalReceivables + inventoryTotalValue + totalAssetMarketValue;
+  const totalAssets =
+    totalCashAndBank + totalSavingsGoals + totalReceivables + inventoryTotalValue + totalAssetMarketValue;
 
   // 4. Liabilities (Open Payables + Monthly Recurring Commitments)
   const openPayables = useMemo(() => {
@@ -129,7 +134,7 @@ export function BalanceSheetTab() {
   const netWorthEquity = totalAssets - totalLiabilities;
 
   // Asset Percentages
-  const cashPercent = totalAssets > 0 ? (((totalCashAndBank + totalReceivables) / totalAssets) * 100).toFixed(1) : '0';
+  const cashPercent = totalAssets > 0 ? (((totalCashAndBank + totalSavingsGoals + totalReceivables) / totalAssets) * 100).toFixed(1) : '0';
   const inventoryPercent = totalAssets > 0 ? ((inventoryTotalValue / totalAssets) * 100).toFixed(1) : '0';
   const collectiblesPercent = totalAssets > 0 ? ((totalAssetMarketValue / totalAssets) * 100).toFixed(1) : '0';
 
@@ -199,7 +204,7 @@ export function BalanceSheetTab() {
             <div
               style={{ width: `${cashPercent}%` }}
               className="bg-emerald-500 hover:opacity-90 transition-all"
-              title={`Cash, Bank & Receivables: ${formatIDR(totalCashAndBank + totalReceivables)} (${cashPercent}%)`}
+              title={`Cash, Savings & Receivables: ${formatIDR(totalCashAndBank + totalSavingsGoals + totalReceivables)} (${cashPercent}%)`}
             />
             <div
               style={{ width: `${inventoryPercent}%` }}
@@ -216,7 +221,7 @@ export function BalanceSheetTab() {
           <div className="flex flex-wrap items-center gap-4 text-xs pt-1">
             <div className="flex items-center gap-1.5">
               <div className="size-2.5 rounded-full bg-emerald-500" />
-              <span className="text-muted-foreground">Cash &amp; Receivables ({cashPercent}%)</span>
+              <span className="text-muted-foreground">Cash, Savings &amp; Receivables ({cashPercent}%)</span>
             </div>
             <div className="flex items-center gap-1.5">
               <div className="size-2.5 rounded-full bg-amber-500" />
@@ -240,7 +245,7 @@ export function BalanceSheetTab() {
                 <Wallet className="size-4 text-primary" />
                 <h3 className="text-sm font-bold text-foreground uppercase tracking-wide">Current Liquid Assets &amp; Receivables</h3>
               </div>
-              <span className="text-xs font-bold text-foreground tabular-nums">{formatIDR(totalCashAndBank + totalReceivables)}</span>
+              <span className="text-xs font-bold text-foreground tabular-nums">{formatIDR(totalCashAndBank + totalSavingsGoals + totalReceivables)}</span>
             </div>
             <Table>
               <TableHeader className="bg-muted/30">
@@ -261,6 +266,13 @@ export function BalanceSheetTab() {
                     <TableCell className="text-right font-semibold text-foreground tabular-nums">{formatIDR(acc.balance)}</TableCell>
                   </TableRow>
                 ))}
+                {totalSavingsGoals > 0 && (
+                  <TableRow className="text-xs">
+                    <TableCell className="font-medium text-foreground">Savings Goals Allocation ({savingsGoals.length} goals)</TableCell>
+                    <TableCell className="text-muted-foreground">Savings</TableCell>
+                    <TableCell className="text-right font-semibold text-sky-400 tabular-nums">{formatIDR(totalSavingsGoals)}</TableCell>
+                  </TableRow>
+                )}
                 {pendingEscrowReceivables > 0 && (
                   <TableRow className="text-xs">
                     <TableCell className="font-medium text-foreground">Marketplace Escrow (Unsettled Sales)</TableCell>
@@ -276,9 +288,9 @@ export function BalanceSheetTab() {
                   </TableRow>
                 )}
                 <TableRow className="bg-muted/20 font-bold text-xs">
-                  <TableCell colSpan={2}>Subtotal Liquid &amp; Receivables</TableCell>
+                  <TableCell colSpan={2}>Subtotal Liquid, Savings &amp; Receivables</TableCell>
                   <TableCell className="text-right text-emerald-600 dark:text-emerald-400 tabular-nums">
-                    {formatIDR(totalCashAndBank + totalReceivables)}
+                    {formatIDR(totalCashAndBank + totalSavingsGoals + totalReceivables)}
                   </TableCell>
                 </TableRow>
               </TableBody>
@@ -458,9 +470,9 @@ export function BalanceSheetTab() {
               </TableHeader>
               <TableBody>
                 <TableRow className="text-xs">
-                  <TableCell className="font-medium text-foreground">Liquid Cash, Bank &amp; Receivables</TableCell>
+                  <TableCell className="font-medium text-foreground">Liquid Cash, Savings &amp; Receivables</TableCell>
                   <TableCell className="text-right text-muted-foreground">{cashPercent}%</TableCell>
-                  <TableCell className="text-right font-semibold text-foreground tabular-nums">{formatIDR(totalCashAndBank + totalReceivables)}</TableCell>
+                  <TableCell className="text-right font-semibold text-foreground tabular-nums">{formatIDR(totalCashAndBank + totalSavingsGoals + totalReceivables)}</TableCell>
                 </TableRow>
                 <TableRow className="text-xs">
                   <TableCell className="font-medium text-foreground">Capital in Merchandise Inventory</TableCell>

@@ -9,11 +9,14 @@ import {
   calculateNetProfit,
   calculateWeightedAverageCost,
   calculateFeeFromRate,
+  calculateCashBreakdownTotal,
 } from '../src/lib/calculations';
 import {
   getMainCategories,
   getSubCategories,
   resolveCategoryPair,
+  isIncomeCategory,
+  isExpenseCategory,
 } from '../src/lib/categories';
 import {
   sanitizeCsvCell,
@@ -29,9 +32,11 @@ import {
   applyUpdateTransaction,
   applyDeleteTransaction,
   applyStockPurchase,
+  applyDepositToSavingsGoal,
+  applyTransferProductToCollection,
   advanceNextBillingDate,
 } from '../src/context/store-handlers';
-import type { Account, Category, Product, Sale, Transaction } from '../src/types';
+import type { Account, Category, Product, Sale, SavingsGoal, Transaction } from '../src/types';
 
 describe('calculations utilities', () => {
   it('distinguishes sellable products vs personal assets', () => {
@@ -300,5 +305,87 @@ describe('store handlers accounting & stock lifecycle', () => {
     assert.equal(advanceNextBillingDate('2026-11-15', 'monthly'), '2026-12-15');
     assert.equal(advanceNextBillingDate('2026-11-15', 'yearly'), '2027-11-15');
     assert.equal(advanceNextBillingDate('2026-11-01', '28_days'), '2026-11-29');
+  });
+
+  it('computes physical cash breakdown total cleanly', () => {
+    const total = calculateCashBreakdownTotal({
+      100000: 3,
+      50000: 2,
+      20000: 4,
+      500: 2,
+    });
+    assert.equal(total, 481000);
+    assert.equal(calculateCashBreakdownTotal(undefined), 0);
+  });
+
+  it('separates income and outcome categories cleanly by flow', () => {
+    const cats: Category[] = [
+      { id: 'c1', name: 'Food', type: 'personal_expense', flow: 'expense' },
+      { id: 'c2', name: 'Toys', type: 'universal' },
+      { id: 'c3', name: 'Income', type: 'personal_income', flow: 'income' },
+      { id: 's1', name: 'Salary', type: 'personal_income', parentId: 'c3' },
+    ];
+    const incomeMains = getMainCategories(cats, { flow: 'income' });
+    const outcomeMains = getMainCategories(cats, { flow: 'expense' });
+    assert.deepEqual(incomeMains.map((c) => c.id), ['c3']);
+    assert.deepEqual(outcomeMains.map((c) => c.id), ['c1', 'c2']);
+    assert.equal(isIncomeCategory(cats[3]), true);
+    assert.equal(isExpenseCategory(cats[1]), true);
+  });
+
+  it('records savings goal deposit as transfer rather than expense', () => {
+    const goals: SavingsGoal[] = [
+      {
+        id: 'svg-1',
+        name: 'Emergency Fund',
+        targetAmount: 5000000,
+        currentAmount: 1000000,
+        createdAt: '2026-11-01',
+      },
+    ];
+    const res = applyDepositToSavingsGoal({
+      savingsGoals: goals,
+      accounts: [baseAccount],
+      transactions: [],
+      goalId: 'svg-1',
+      amount: 250000,
+      accountId: 'acc-1',
+      date: '2026-11-25',
+      nowIso: '2026-11-25T10:00:00Z',
+    });
+    assert.equal(res.updatedGoals[0].currentAmount, 1250000);
+    assert.equal(res.updatedAccounts[0].balance, 750000);
+    assert.equal(res.updatedTransactions.length, 1);
+    assert.equal(res.updatedTransactions[0].type, 'transfer');
+    assert.equal(res.updatedTransactions[0].sourceModule, 'savings_deposit');
+  });
+
+  it('transfers 1 unit from seller to collection while preserving original SKU', () => {
+    const singleStockProd: Product = { ...baseProduct, stockOnHand: 1, stockSold: 4 };
+    const res = applyTransferProductToCollection({
+      products: [singleStockProd],
+      productId: 'prod-1',
+      condition: 'mint',
+      nowIso: '2026-11-25T10:00:00Z',
+      dateStr: '2026-11-25',
+    });
+    assert.equal(res.updatedProducts.length, 2);
+    const createdAsset = res.updatedProducts.find((p) => p.productType === 'asset');
+    const originalSeller = res.updatedProducts.find((p) => p.id === 'prod-1');
+    assert.ok(createdAsset);
+    assert.equal(createdAsset?.stockOnHand, 1);
+    assert.equal(originalSeller?.stockOnHand, 0);
+    assert.equal(originalSeller?.stockSold, 4);
+    assert.equal(originalSeller?.productType, 'regular_inventory');
+
+    // Out-of-stock guard
+    const zeroRes = applyTransferProductToCollection({
+      products: [{ ...baseProduct, stockOnHand: 0 }],
+      productId: 'prod-1',
+      nowIso: '2026-11-25T10:00:00Z',
+      dateStr: '2026-11-25',
+    });
+    assert.equal(zeroRes.movement, undefined);
+    assert.equal(zeroRes.updatedProducts.length, 1);
   });
 });

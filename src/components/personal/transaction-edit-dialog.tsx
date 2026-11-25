@@ -53,22 +53,19 @@ export function TransactionEditDialog({ open, onOpenChange, transaction }: Trans
   if (!transaction) return null;
 
   const isTransfer = transaction.type === 'transfer';
-  const allowedCategoryTypes =
-    transaction.type === 'income'
-      ? (['personal_income'] as const)
-      : (['personal_expense', 'business_expense', 'product'] as const);
+  const isGoalDeposit = isTransfer && transaction.sourceModule === 'savings_deposit';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const numericAmount = Number(amount);
     if (!numericAmount || numericAmount <= 0 || !description.trim()) return;
-    if (isTransfer && (!toAccountId || toAccountId === accountId)) return;
+    if (isTransfer && !isGoalDeposit && (!toAccountId || toAccountId === accountId)) return;
 
     updateTransaction(transaction.id, {
       date,
       amount: numericAmount,
       accountId,
-      toAccountId: isTransfer ? toAccountId : undefined,
+      toAccountId: isTransfer && !isGoalDeposit ? toAccountId : undefined,
       categoryId: isTransfer ? undefined : categoryId || undefined,
       subCategoryId: isTransfer ? undefined : subCategoryId || undefined,
       description: description.trim(),
@@ -106,7 +103,7 @@ export function TransactionEditDialog({ open, onOpenChange, transaction }: Trans
             </div>
           </div>
 
-          <div className={`grid grid-cols-1 ${isTransfer ? 'sm:grid-cols-2' : ''} gap-3`}>
+          <div className={`grid grid-cols-1 ${isTransfer && !isGoalDeposit ? 'sm:grid-cols-2' : ''} gap-3`}>
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">
                 {isTransfer ? 'Source Pocket' : 'Pocket'}
@@ -125,7 +122,7 @@ export function TransactionEditDialog({ open, onOpenChange, transaction }: Trans
               </select>
             </div>
 
-            {isTransfer && (
+            {isTransfer && !isGoalDeposit && (
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1">Destination Pocket</label>
                 <select
@@ -147,7 +144,7 @@ export function TransactionEditDialog({ open, onOpenChange, transaction }: Trans
           {!isTransfer && (
             <CategorySubSelect
               categories={categories}
-              allowedTypes={[...allowedCategoryTypes]}
+              flow={transaction.type === 'income' ? 'income' : 'expense'}
               categoryId={categoryId}
               subCategoryId={subCategoryId}
               onCategoryChange={setCategoryId}

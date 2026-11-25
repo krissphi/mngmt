@@ -34,7 +34,7 @@ function FinanceContent() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Personal Finance"
+        title="Finance"
         description="Manage your pockets, track income and expenses, set budgets, savings goals, and subscriptions."
       />
 

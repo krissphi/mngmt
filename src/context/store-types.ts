@@ -43,6 +43,9 @@ export interface StoreContextType {
   addProductsBatch: (products: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'stockSold' | 'stockReserved'>[]) => void;
   updateProduct: (id: string, updates: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
+  archiveProduct: (id: string) => void;
+  unarchiveProduct: (id: string) => void;
+  archiveOutOfStockProducts: () => void;
   adjustStock: (productId: string, quantityChange: number, type: InventoryMovement['type'], notes: string) => void;
   recordStockPurchase: (params: {
     productId: string;
@@ -92,6 +95,7 @@ export interface StoreContextType {
   updateAsset: (id: string, updates: Partial<Asset>) => void;
   deleteAsset: (id: string) => void;
   transferCollectionToSeller: (assetId: string, sellingPrice: number, sku?: string) => void;
+  transferProductToCollection: (productId: string, condition?: Asset['condition']) => void;
 
   // Supplier Actions
   addSupplier: (supplier: Omit<Supplier, 'id' | 'createdAt'>) => Supplier;

@@ -17,7 +17,8 @@ import {
   applySaleToProducts, createInventoryMovement,
   cleanCategoryName, advanceNextBillingDate, deduplicateById,
   applyDeleteTransaction, applyUpdateTransaction, applySaleStatusUpdateSingle,
-  applyDeleteSale, applyTransactionBalance, applyStockPurchase, generateSecureId
+  applyDeleteSale, applyTransactionBalance, applyStockPurchase,
+  applyDepositToSavingsGoal, applyTransferProductToCollection, generateSecureId
 } from './store-handlers';
 import { StoreContextType } from './store-types';
 
@@ -350,6 +351,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
       let updatedProducts = prev.products;
       let updatedMovements = prev.inventoryMovements;
+      let updatedGoals = prev.savingsGoals;
       if (
         deletedTransaction &&
         (deletedTransaction.itemAction === 'collect' || deletedTransaction.itemAction === 'sell') &&
@@ -362,12 +364,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      if (deletedTransaction?.sourceModule === 'savings_deposit' && deletedTransaction.referenceId) {
+        updatedGoals = prev.savingsGoals.map((g) =>
+          g.id === deletedTransaction.referenceId
+            ? { ...g, currentAmount: Math.max(0, (g.currentAmount || 0) - deletedTransaction.amount) }
+            : g
+        );
+      }
+
       return {
         ...prev,
         transactions: updatedTransactions,
         accounts: updatedAccounts,
         products: updatedProducts,
         inventoryMovements: updatedMovements,
+        savingsGoals: updatedGoals,
       };
     });
   }, []);
@@ -436,6 +447,34 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const archiveProduct = useCallback((id: string) => {
+    const nowIso = new Date().toISOString();
+    setState((prev) => ({
+      ...prev,
+      products: prev.products.map((p) => (p.id === id ? { ...p, status: 'archived', updatedAt: nowIso } : p)),
+    }));
+  }, []);
+
+  const unarchiveProduct = useCallback((id: string) => {
+    const nowIso = new Date().toISOString();
+    setState((prev) => ({
+      ...prev,
+      products: prev.products.map((p) => (p.id === id ? { ...p, status: 'active', updatedAt: nowIso } : p)),
+    }));
+  }, []);
+
+  const archiveOutOfStockProducts = useCallback(() => {
+    const nowIso = new Date().toISOString();
+    setState((prev) => ({
+      ...prev,
+      products: prev.products.map((p) =>
+        p.productType !== 'asset' && p.status === 'active' && p.stockOnHand === 0
+          ? { ...p, status: 'archived', updatedAt: nowIso }
+          : p
+      ),
+    }));
+  }, []);
+
   const adjustStock = useCallback(
     (productId: string, quantityChange: number, type: InventoryMovement['type'], notes: string) => {
       const nowIso = new Date().toISOString();
@@ -446,10 +485,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const prevStock = target.stockOnHand;
         const newStock = Math.max(0, prevStock + quantityChange);
         const mov = createInventoryMovement(productId, type, quantityChange, notes, undefined, prevStock, newStock, ts);
+        const nextStatus = target.status === 'archived' && newStock > 0 ? 'active' : target.status;
         return {
           ...prev,
           products: prev.products.map((prod) =>
-            prod.id === productId ? { ...prod, stockOnHand: newStock, updatedAt: nowIso } : prod
+            prod.id === productId ? { ...prod, stockOnHand: newStock, status: nextStatus, updatedAt: nowIso } : prod
           ),
           inventoryMovements: [mov, ...prev.inventoryMovements],
         };
@@ -767,35 +807,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const nowIso = new Date().toISOString();
       const trxDate = date || getLocalDateString();
       setState((prev) => {
-        const goal = prev.savingsGoals.find((g) => g.id === goalId);
-        if (!goal) return prev;
-
-        let nextTransactions = prev.transactions;
-        let nextAccounts = prev.accounts;
-        if (accountId) {
-          const trx: Transaction = {
-            id: generateSecureId('trx'),
-            date: trxDate,
-            scope: 'personal',
-            type: 'expense',
-            amount,
-            accountId,
-            sourceModule: 'personal_expense',
-            referenceId: goalId,
-            description: `Savings Goal Deposit: ${goal.name}`,
-            createdAt: nowIso,
-          };
-          nextTransactions = [trx, ...prev.transactions];
-          nextAccounts = applyTransactionBalance(prev.accounts, trx, 1, nowIso);
-        }
-
+        const { updatedGoals, updatedAccounts, updatedTransactions } = applyDepositToSavingsGoal({
+          savingsGoals: prev.savingsGoals,
+          accounts: prev.accounts,
+          transactions: prev.transactions,
+          goalId,
+          amount,
+          accountId,
+          date: trxDate,
+          nowIso,
+        });
         return {
           ...prev,
-          savingsGoals: prev.savingsGoals.map((g) =>
-            g.id === goalId ? { ...g, currentAmount: (g.currentAmount || 0) + amount } : g
-          ),
-          transactions: nextTransactions,
-          accounts: nextAccounts,
+          savingsGoals: updatedGoals,
+          transactions: updatedTransactions,
+          accounts: updatedAccounts,
         };
       });
     },
@@ -954,6 +980,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
               }
         ),
         inventoryMovements: [mov, ...prev.inventoryMovements],
+      };
+    });
+  }, []);
+
+  const transferProductToCollection = useCallback((productId: string, condition?: Asset['condition']) => {
+    const nowIso = new Date().toISOString();
+    const dateStr = getLocalDateString();
+    const ts = getLocalTimestamp();
+    setState((prev) => {
+      const { updatedProducts, movement } = applyTransferProductToCollection({
+        products: prev.products,
+        productId,
+        condition,
+        nowIso,
+        dateStr,
+        timestamp: ts,
+      });
+      if (!movement) return prev;
+      return {
+        ...prev,
+        products: updatedProducts,
+        inventoryMovements: [movement, ...prev.inventoryMovements],
       };
     });
   }, []);
@@ -1174,6 +1222,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       addProductsBatch,
       updateProduct,
       deleteProduct,
+      archiveProduct,
+      unarchiveProduct,
+      archiveOutOfStockProducts,
       adjustStock,
       recordStockPurchase,
       recordSale,
@@ -1201,6 +1252,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateAsset,
       deleteAsset,
       transferCollectionToSeller,
+      transferProductToCollection,
       addSupplier,
       updateSupplier,
       deleteSupplier,
@@ -1229,6 +1281,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       addProductsBatch,
       updateProduct,
       deleteProduct,
+      archiveProduct,
+      unarchiveProduct,
+      archiveOutOfStockProducts,
       adjustStock,
       recordStockPurchase,
       recordSale,
@@ -1256,6 +1311,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateAsset,
       deleteAsset,
       transferCollectionToSeller,
+      transferProductToCollection,
       addSupplier,
       updateSupplier,
       deleteSupplier,

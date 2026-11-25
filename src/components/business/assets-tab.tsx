@@ -72,7 +72,7 @@ export function AssetsTab({ showAddForm, setShowAddForm }: AssetsTabProps) {
   // Extract unique main categories for filter dropdown
   const availableCategories = useMemo(() => {
     const set = new Set<string>();
-    getMainCategories(categories, ['product']).forEach((c) => set.add(c.name));
+    getMainCategories(categories, { flow: 'expense' }).forEach((c) => set.add(c.name));
     assets.forEach((a) => {
       const resolved = resolveCategoryPair(categories, a.categoryId, a.subCategoryId, a.category || '');
       if (resolved.mainName) set.add(resolved.mainName);

@@ -6,8 +6,7 @@ import { useStore } from '@/context/store-context';
 import { Budget } from '@/types';
 import { formatIDR } from '@/lib/currency';
 import { getLocalMonthString } from '@/lib/date';
-import { resolveCategoryPair } from '@/lib/categories';
-import { CategorySubSelect } from '@/components/shared/category-sub-select';
+import { resolveCategoryPair, getMainCategories } from '@/lib/categories';
 import { SummaryBanner } from '@/components/shared/summary-banner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,10 +39,14 @@ export function BudgetsTab() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [newBudgetCategory, setNewBudgetCategory] = useState('');
-  const [newBudgetSubCategory, setNewBudgetSubCategory] = useState('');
   const [newBudgetAmount, setNewBudgetAmount] = useState('');
   const [editBudgetAmount, setEditBudgetAmount] = useState('');
   const [selectedMonth, setSelectedMonth] = useState<string>(() => getLocalMonthString());
+
+  const mainCategories = useMemo(
+    () => getMainCategories(categories, { flow: 'expense' }),
+    [categories]
+  );
 
   const availableMonths = useMemo(() => {
     const set = new Set<string>([getLocalMonthString()]);
@@ -127,14 +130,12 @@ export function BudgetsTab() {
     if (!newBudgetCategory || !newBudgetAmount) return;
     addBudget({
       categoryId: newBudgetCategory,
-      subCategoryId: newBudgetSubCategory || undefined,
       month: activeMonthForCreate,
       allocatedAmount: Number(newBudgetAmount),
       spentAmount: 0,
     });
     setNewBudgetAmount('');
     setNewBudgetCategory('');
-    setNewBudgetSubCategory('');
     setShowAddBudget(false);
   };
 
@@ -205,16 +206,22 @@ export function BudgetsTab() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateBudget} className="space-y-3 pt-2">
-            <CategorySubSelect
-              categories={categories}
-              allowedTypes={['personal_expense']}
-              categoryId={newBudgetCategory}
-              subCategoryId={newBudgetSubCategory}
-              onCategoryChange={setNewBudgetCategory}
-              onSubCategoryChange={setNewBudgetSubCategory}
-              subLabel="Sub Category (Optional)"
-              required
-            />
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Main Category</label>
+              <select
+                className="w-full h-8.5 rounded-md border border-input bg-card px-2.5 text-xs text-foreground focus-visible:outline-none"
+                value={newBudgetCategory}
+                onChange={(e) => setNewBudgetCategory(e.target.value)}
+                required
+              >
+                <option value="">Select Main Category...</option>
+                {mainCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Monthly Spending Limit (Rp)</label>
               <Input

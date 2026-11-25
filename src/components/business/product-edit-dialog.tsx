@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useStore } from '@/context/store-context';
-import { Product } from '@/types';
+import { Product, ProductStatus, ProductType } from '@/types';
 import { CategorySubSelect } from '@/components/shared/category-sub-select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,8 @@ export function ProductEditDialog({ open, onOpenChange, product }: ProductEditDi
   const [purchaseCost, setPurchaseCost] = useState(product ? String(product.purchaseCost) : '');
   const [sellingPrice, setSellingPrice] = useState(product ? String(product.sellingPrice) : '');
   const [minStockAlert, setMinStockAlert] = useState(product ? String(product.minStockAlert || 2) : '2');
+  const [status, setStatus] = useState<ProductStatus>(product?.status || 'active');
+  const [productType, setProductType] = useState<ProductType>(product?.productType || 'regular_inventory');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const syncKey = `${open}-${product?.id || ''}`;
@@ -41,6 +43,8 @@ export function ProductEditDialog({ open, onOpenChange, product }: ProductEditDi
       setPurchaseCost(String(product.purchaseCost));
       setSellingPrice(String(product.sellingPrice));
       setMinStockAlert(String(product.minStockAlert ?? 2));
+      setStatus(product.status || 'active');
+      setProductType(product.productType || 'regular_inventory');
     }
   }
 
@@ -57,6 +61,8 @@ export function ProductEditDialog({ open, onOpenChange, product }: ProductEditDi
       purchaseCost: Number(purchaseCost) || 0,
       sellingPrice: Number(sellingPrice) || 0,
       minStockAlert: Number(minStockAlert) || 0,
+      status,
+      productType,
     });
 
     onOpenChange(false);
@@ -119,14 +125,14 @@ export function ProductEditDialog({ open, onOpenChange, product }: ProductEditDi
 
           <CategorySubSelect
             categories={categories}
-            allowedTypes={['product']}
+            flow="expense"
             categoryId={categoryId}
             subCategoryId={subCategoryId}
             onCategoryChange={setCategoryId}
             onSubCategoryChange={setSubCategoryId}
           />
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Purchase Cost (Rp)</label>
               <Input
@@ -144,6 +150,32 @@ export function ProductEditDialog({ open, onOpenChange, product }: ProductEditDi
                 onChange={(e) => setSellingPrice(e.target.value)}
                 required
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Catalog Status</label>
+              <select
+                className="w-full h-8.5 rounded-md border border-input bg-card px-2.5 text-xs text-foreground focus-visible:outline-none"
+                value={status}
+                onChange={(e) => setStatus(e.target.value as ProductStatus)}
+              >
+                <option value="active">Active (Ready / Sales)</option>
+                <option value="archived">Archived (Hidden)</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Product Type</label>
+              <select
+                className="w-full h-8.5 rounded-md border border-input bg-card px-2.5 text-xs text-foreground focus-visible:outline-none"
+                value={productType}
+                onChange={(e) => setProductType(e.target.value as ProductType)}
+              >
+                <option value="regular_inventory">New Stock (Regular)</option>
+                <option value="preloved">Preloved (Secondhand)</option>
+                <option value="asset">Personal Collection / Asset</option>
+              </select>
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Min. Alert</label>

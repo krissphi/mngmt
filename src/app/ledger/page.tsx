@@ -32,7 +32,7 @@ function LedgerContent() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Accounting & Ledger"
+        title="Ledger"
         description="Audit transaction records, monitor inflows/outflows, track payables & receivables, and review financial statements."
       />
 
@@ -46,7 +46,7 @@ function LedgerContent() {
           }`}
         >
           <Receipt className="size-3.5" />
-          <span>General Ledger</span>
+          <span>Ledger</span>
         </button>
 
         <button
@@ -58,7 +58,7 @@ function LedgerContent() {
           }`}
         >
           <TrendingUp className="size-3.5" />
-          <span>Cash Flow</span>
+          <span>Cashflow</span>
         </button>
 
         <button
@@ -70,7 +70,7 @@ function LedgerContent() {
           }`}
         >
           <BarChart3 className="size-3.5" />
-          <span>Profit &amp; Loss</span>
+          <span>Profit</span>
         </button>
 
         <button
@@ -82,7 +82,7 @@ function LedgerContent() {
           }`}
         >
           <Scale className="size-3.5" />
-          <span>Balance Sheet</span>
+          <span>Balance</span>
         </button>
 
         <button
@@ -94,7 +94,7 @@ function LedgerContent() {
           }`}
         >
           <HandCoins className="size-3.5" />
-          <span>Payables &amp; Receivables</span>
+          <span>Debts</span>
         </button>
       </div>
 

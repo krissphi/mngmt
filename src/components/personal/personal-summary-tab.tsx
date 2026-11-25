@@ -4,14 +4,15 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '@/context/store-context';
 import { formatIDR, formatSignedIDR } from '@/lib/currency';
 import { getLocalMonthString } from '@/lib/date';
+import { resolveCategoryPair } from '@/lib/categories';
 import { SummaryBanner } from '@/components/shared/summary-banner';
 import { StatCard } from '@/components/shared/stat-card';
-import { Building2, CreditCard, Banknote, Wallet, Calendar, Plus } from 'lucide-react';
+import { Building2, CreditCard, Banknote, Wallet, Calendar, Plus, PieChart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { QuickActionModal } from '@/components/shared/quick-action-modal';
 
 export function PersonalSummaryTab() {
-  const { accounts, transactions, savingsGoals, wishlist, subscriptions } = useStore();
+  const { accounts, transactions, savingsGoals, wishlist, subscriptions, budgets, categories } = useStore();
   const [currentMonth] = useState(() => getLocalMonthString());
   const [quickModalOpen, setQuickModalOpen] = useState(false);
 
@@ -68,6 +69,36 @@ export function PersonalSummaryTab() {
   }, [activeSubs]);
 
   const netMonthFlow = monthIncome - monthExpense;
+
+  const { monthBudgets, totalAllocatedBudget, totalSpentBudget } = useMemo(() => {
+    const spentByMain = new Map<string, number>();
+    for (const t of transactions) {
+      if (t.scope === 'personal' && t.type === 'expense' && t.date && t.date.startsWith(currentMonth)) {
+        const resolved = resolveCategoryPair(categories, t.categoryId, t.subCategoryId);
+        if (resolved.mainId) {
+          spentByMain.set(resolved.mainId, (spentByMain.get(resolved.mainId) || 0) + t.amount);
+        }
+      }
+    }
+
+    const activeBudgets = budgets.filter((b) => b.month === currentMonth);
+    const items = activeBudgets.map((b) => {
+      const resolved = resolveCategoryPair(categories, b.categoryId, b.subCategoryId);
+      const spent = resolved.mainId ? spentByMain.get(resolved.mainId) || 0 : 0;
+      const pct = b.allocatedAmount > 0 ? Math.round((spent / b.allocatedAmount) * 100) : 0;
+      return {
+        id: b.id,
+        name: resolved.mainName,
+        allocated: b.allocatedAmount,
+        spent,
+        pct,
+      };
+    });
+
+    const totalAlloc = items.reduce((sum, i) => sum + i.allocated, 0);
+    const totalSpent = items.reduce((sum, i) => sum + i.spent, 0);
+    return { monthBudgets: items, totalAllocatedBudget: totalAlloc, totalSpentBudget: totalSpent };
+  }, [budgets, transactions, categories, currentMonth]);
 
   return (
     <div className="space-y-6">
@@ -184,6 +215,53 @@ export function PersonalSummaryTab() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Monthly Budgets Realization */}
+      <div className="rounded-2xl border border-border/50 bg-card/60 backdrop-blur-xs p-5 space-y-4">
+        <div className="flex items-center justify-between border-b border-border/40 pb-3">
+          <div className="flex items-center gap-2">
+            <PieChart className="size-4 text-primary" />
+            <span className="text-sm font-semibold text-foreground">Monthly Budgets ({currentMonth})</span>
+          </div>
+          <span className="text-xs text-muted-foreground font-mono tabular-nums">
+            {formatIDR(totalSpentBudget)} / {formatIDR(totalAllocatedBudget)}
+          </span>
+        </div>
+
+        {monthBudgets.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-3 text-center">
+            No budgets configured for {currentMonth}.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {monthBudgets.map((b) => {
+              const isOver = b.spent > b.allocated;
+              const isWarn = !isOver && b.pct >= 80;
+              return (
+                <div key={b.id} className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="font-medium text-foreground truncate">{b.name}</span>
+                    <span className="font-mono tabular-nums shrink-0 text-[11px]">
+                      <span className={isOver ? 'text-rose-500 font-semibold' : isWarn ? 'text-amber-500 font-semibold' : 'text-foreground'}>
+                        {formatIDR(b.spent)}
+                      </span>
+                      <span className="text-muted-foreground"> / {formatIDR(b.allocated)} ({b.pct}%)</span>
+                    </span>
+                  </div>
+                  <div className="w-full bg-secondary/50 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        isOver ? 'bg-rose-500' : isWarn ? 'bg-amber-500' : 'bg-emerald-500'
+                      }`}
+                      style={{ width: `${Math.min(100, b.pct)}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <QuickActionModal

@@ -153,7 +153,7 @@ export function TransactionsTable({
                   <TableCell className="whitespace-nowrap py-3 px-4">
                     {isTransfer ? (
                       <Badge variant="outline" className="text-[10px] h-4.5 px-1.5 py-0 font-normal border-blue-500/30 text-blue-600 dark:text-blue-400 bg-blue-500/5">
-                        Transfer
+                        {t.sourceModule === 'savings_deposit' ? 'Goal Deposit' : 'Transfer'}
                       </Badge>
                     ) : resolvedCat.main ? (
                       <div className="flex items-center gap-1 flex-wrap">
@@ -175,7 +175,9 @@ export function TransactionsTable({
                       <div className="flex items-center gap-1 text-[11px] font-medium text-foreground">
                         <span>{accountObj?.name || 'Source'}</span>
                         <span className="text-muted-foreground">→</span>
-                        <span className="text-blue-600 dark:text-blue-400">{destAccountObj?.name || 'Dest'}</span>
+                        <span className="text-blue-600 dark:text-blue-400">
+                          {t.sourceModule === 'savings_deposit' ? 'Savings Goal' : destAccountObj?.name || 'Dest'}
+                        </span>
                       </div>
                     ) : (
                       accountObj?.name || '-'

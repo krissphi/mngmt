@@ -1,16 +1,58 @@
-import type { Category, CategoryType } from '@/types';
+import type { Category, CategoryType, CategoryFlow } from '@/types';
+
+export function isIncomeCategory(cat: Category): boolean {
+  if (cat.flow === 'income') return true;
+  if (cat.flow === 'expense') return false;
+  return (
+    cat.type === 'personal_income' ||
+    cat.id === 'cat-inc-1' ||
+    cat.parentId === 'cat-inc-1'
+  );
+}
+
+export function isExpenseCategory(cat: Category): boolean {
+  return !isIncomeCategory(cat);
+}
 
 export function isMainCategory(cat: Category): boolean {
   return !cat.parentId;
 }
 
-export function getMainCategories(categories: Category[], allowedTypes?: CategoryType[]): Category[] {
-  const mains = categories.filter((c) => !c.parentId);
-  if (!allowedTypes || allowedTypes.length === 0) {
-    return mains;
+export interface GetMainCategoriesOptions {
+  flow?: CategoryFlow | 'all';
+  allowedTypes?: CategoryType[];
+}
+
+export function getMainCategories(
+  categories: Category[],
+  options?: GetMainCategoriesOptions | CategoryType[]
+): Category[] {
+  let mains = categories.filter((c) => !c.parentId);
+
+  if (!options) return mains;
+
+  let flow: 'income' | 'expense' | 'all' = 'all';
+  let allowedTypes: CategoryType[] | undefined;
+
+  if (Array.isArray(options)) {
+    allowedTypes = options;
+  } else {
+    flow = options.flow || 'all';
+    allowedTypes = options.allowedTypes;
   }
-  const typeSet = new Set<CategoryType>(['universal', ...allowedTypes]);
-  return mains.filter((c) => typeSet.has(c.type));
+
+  if (flow === 'income') {
+    mains = mains.filter(isIncomeCategory);
+  } else if (flow === 'expense') {
+    mains = mains.filter(isExpenseCategory);
+  }
+
+  if (allowedTypes && allowedTypes.length > 0) {
+    const typeSet = new Set<CategoryType>(['universal', ...allowedTypes]);
+    mains = mains.filter((c) => typeSet.has(c.type));
+  }
+
+  return mains;
 }
 
 export function getSubCategories(categories: Category[], parentId?: string): Category[] {

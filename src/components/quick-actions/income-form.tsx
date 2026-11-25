@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useStore } from '@/context/store-context';
 import { getLocalDateString } from '@/lib/date';
+import { getMainCategories } from '@/lib/categories';
 import { CategorySubSelect } from '@/components/shared/category-sub-select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,7 +21,9 @@ export function IncomeForm({ onSuccess, onCancel }: IncomeFormProps) {
   const [trxDate, setTrxDate] = useState(() => getLocalDateString());
   const [trxAmount, setTrxAmount] = useState('');
   const [trxAccount, setTrxAccount] = useState(() => accounts[0]?.id || '');
-  const [trxCategory, setTrxCategory] = useState('');
+  const [trxCategory, setTrxCategory] = useState(
+    () => getMainCategories(categories, { flow: 'income' })[0]?.id || ''
+  );
   const [trxSubCategory, setTrxSubCategory] = useState('');
   const [trxDesc, setTrxDesc] = useState('');
 
@@ -83,7 +86,7 @@ export function IncomeForm({ onSuccess, onCancel }: IncomeFormProps) {
 
       <CategorySubSelect
         categories={categories}
-        allowedTypes={['personal_income']}
+        flow="income"
         categoryId={trxCategory}
         subCategoryId={trxSubCategory}
         onCategoryChange={setTrxCategory}

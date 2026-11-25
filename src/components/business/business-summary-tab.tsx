@@ -46,16 +46,20 @@ export function BusinessSummaryTab() {
   }, [targetSales]);
 
   const sellableProducts = useMemo(() => products.filter(isSellableProduct), [products]);
+  const activeSellableProducts = useMemo(
+    () => sellableProducts.filter((p) => p.status !== 'archived'),
+    [sellableProducts]
+  );
 
   const { availableStockCount, inventoryCostCapital } = useMemo(() => {
     let units = 0;
     let capital = 0;
-    for (const p of sellableProducts) {
+    for (const p of activeSellableProducts) {
       units += getAvailableStock(p);
       capital += (p.stockOnHand || 0) * (p.purchaseCost || 0);
     }
     return { availableStockCount: units, inventoryCostCapital: capital };
-  }, [sellableProducts]);
+  }, [activeSellableProducts]);
 
   const channelBreakdown = useMemo(() => {
     const map = new Map<string, number>();
@@ -66,8 +70,8 @@ export function BusinessSummaryTab() {
   }, [targetSales]);
 
   const lowStockItems = useMemo(() => {
-    return sellableProducts.filter((p) => p.status === 'active' && p.stockOnHand <= p.minStockAlert);
-  }, [sellableProducts]);
+    return activeSellableProducts.filter((p) => p.stockOnHand <= p.minStockAlert);
+  }, [activeSellableProducts]);
 
   const topProducts = useMemo(() => {
     const map = new Map<string, { name: string; sku: string; units: number; revenue: number; profit: number }>();
@@ -101,7 +105,7 @@ export function BusinessSummaryTab() {
         meta={[
           `${targetSales.length} Valid ${targetSales.length === 1 ? 'Order' : 'Orders'}`,
           `Net Profit ${formatIDR(netProfit)} (${marginPct}%)`,
-          `${sellableProducts.length} Active SKUs`,
+          `${activeSellableProducts.length} Active SKUs`,
         ]}
         actions={
           <>
@@ -161,7 +165,7 @@ export function BusinessSummaryTab() {
         <StatCard
           title="Available Store Stock"
           value={`${availableStockCount} units`}
-          subtitle={`${sellableProducts.length} active SKUs`}
+          subtitle={`${activeSellableProducts.length} active SKUs`}
         />
         <StatCard
           title="Inventory Cost Capital"

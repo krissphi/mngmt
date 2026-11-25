@@ -34,7 +34,10 @@ interface DraftLine {
 export function SaleForm({ onSuccess, onCancel }: SaleFormProps) {
   const { accounts, products, recordSale } = useStore();
 
-  const saleProducts = useMemo(() => products.filter(isSellableProduct), [products]);
+  const saleProducts = useMemo(
+    () => products.filter((p) => isSellableProduct(p) && p.status !== 'archived'),
+    [products]
+  );
   const feeRates = useMemo(() => getSavedChannelFeeRates(), []);
 
   const [saleDate, setSaleDate] = useState(() => getLocalDateString());

@@ -6,6 +6,7 @@ import { getMainCategories, getSubCategories } from '@/lib/categories';
 
 interface CategorySubSelectProps {
   categories: Category[];
+  flow?: 'income' | 'expense' | 'all';
   allowedTypes?: CategoryType[];
   categoryId: string;
   subCategoryId: string;
@@ -20,6 +21,7 @@ interface CategorySubSelectProps {
 
 export function CategorySubSelect({
   categories,
+  flow,
   allowedTypes,
   categoryId,
   subCategoryId,
@@ -32,8 +34,8 @@ export function CategorySubSelect({
   className = '',
 }: CategorySubSelectProps) {
   const mainCategories = useMemo(
-    () => getMainCategories(categories, allowedTypes),
-    [categories, allowedTypes]
+    () => getMainCategories(categories, { flow, allowedTypes }),
+    [categories, flow, allowedTypes]
   );
 
   // If current categoryId is actually a legacy subcategory ID, resolve its parent smoothly

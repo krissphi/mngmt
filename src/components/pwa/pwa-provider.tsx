@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useSyncExternalStore } from "react";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -23,21 +23,49 @@ const PwaContext = createContext<PwaContextType>({
   installApp: async () => false,
 });
 
+const PWA_CHANGE_EVENT = "pwa-state-change";
+
+function notifyPwaChange() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(PWA_CHANGE_EVENT));
+  }
+}
+
+function subscribePwa(callback: () => void) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("online", callback);
+  window.addEventListener("offline", callback);
+  window.addEventListener("appinstalled", callback);
+  window.addEventListener(PWA_CHANGE_EVENT, callback);
+  const media = window.matchMedia("(display-mode: standalone)");
+  media.addEventListener?.("change", callback);
+  return () => {
+    window.removeEventListener("online", callback);
+    window.removeEventListener("offline", callback);
+    window.removeEventListener("appinstalled", callback);
+    window.removeEventListener(PWA_CHANGE_EVENT, callback);
+    media.removeEventListener?.("change", callback);
+  };
+}
+
+function getIsInstalledSnapshot(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (window.navigator as unknown as { standalone?: boolean }).standalone === true
+  );
+}
+
+function getIsOfflineSnapshot(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return !navigator.onLine;
+}
+
 export function PwaProvider({ children }: { children: React.ReactNode }) {
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return (
-      window.matchMedia("(display-mode: standalone)").matches ||
-      (window.navigator as unknown as { standalone?: boolean }).standalone ===
-        true
-    );
-  });
-  const [isOffline, setIsOffline] = useState(() => {
-    if (typeof navigator === "undefined") return false;
-    return !navigator.onLine;
-  });
+  const isInstalled = useSyncExternalStore(subscribePwa, getIsInstalledSnapshot, () => false);
+  const isOffline = useSyncExternalStore(subscribePwa, getIsOfflineSnapshot, () => false);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
 
   useEffect(() => {
@@ -68,19 +96,8 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    // 2. Check standalone media query changes & online/offline listeners
+    // 2. Capture PWA install prompt & app installation
     if (typeof window !== "undefined") {
-      const mediaQuery = window.matchMedia("(display-mode: standalone)");
-      const handleMediaChange = (e: MediaQueryListEvent) =>
-        setIsInstalled(e.matches);
-      mediaQuery.addEventListener("change", handleMediaChange);
-
-      const handleOnline = () => setIsOffline(false);
-      const handleOffline = () => setIsOffline(true);
-      window.addEventListener("online", handleOnline);
-      window.addEventListener("offline", handleOffline);
-
-      // 3. Capture PWA install prompt
       const handleBeforeInstallPrompt = (e: Event) => {
         e.preventDefault();
         setDeferredPrompt(e as BeforeInstallPromptEvent);
@@ -90,22 +107,21 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
         }
       };
 
-      window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
-
-      window.addEventListener("appinstalled", () => {
-        setIsInstalled(true);
+      const handleAppInstalled = () => {
         setDeferredPrompt(null);
         setShowInstallBanner(false);
-      });
+        notifyPwaChange();
+      };
+
+      window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.addEventListener("appinstalled", handleAppInstalled);
 
       return () => {
-        mediaQuery.removeEventListener("change", handleMediaChange);
-        window.removeEventListener("online", handleOnline);
-        window.removeEventListener("offline", handleOffline);
         window.removeEventListener(
           "beforeinstallprompt",
           handleBeforeInstallPrompt,
         );
+        window.removeEventListener("appinstalled", handleAppInstalled);
       };
     }
   }, []);
@@ -116,9 +132,9 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
       await deferredPrompt.prompt();
       const choiceResult = await deferredPrompt.userChoice;
       if (choiceResult.outcome === "accepted") {
-        setIsInstalled(true);
         setShowInstallBanner(false);
         setDeferredPrompt(null);
+        notifyPwaChange();
         return true;
       }
       return false;
